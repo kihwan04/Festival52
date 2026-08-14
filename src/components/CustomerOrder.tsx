@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronRight, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, X } from "lucide-react";
+import { ArrowLeft, Check, ChefHat, ChevronRight, PackageCheck, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU } from "@/src/shared/demo-data";
 import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
-import type { FulfillmentType } from "@/src/features/orders/domain/order";
+import { publicOrderProgressStep, publicOrderStatusMessage, type FulfillmentType, type PublicOrder } from "@/src/features/orders/domain/order";
+import { usePublicOrderStatus } from "@/src/features/orders/presentation/use-public-order-status";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 interface CustomerOrderProps {
@@ -17,7 +18,7 @@ interface CustomerOrderProps {
   demoMode?: boolean;
 }
 
-interface CreatedOrder { orderNumber: string; publicToken: string | null }
+interface CreatedOrder { orderNumber: string; publicToken: string | null; initialOrder: PublicOrder }
 
 export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuItems = DEMO_MENU, storeSettings = DEMO_STORE_SETTINGS, demoMode = false }: CustomerOrderProps) {
   const [fulfillment, setFulfillment] = useState<FulfillmentType>(initialFulfillment);
@@ -29,6 +30,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
   const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const { order: syncedOrder, connected, lastUpdatedAt, refresh: refreshOrder } = usePublicOrderStatus(createdOrder?.publicToken ?? null);
 
   const categories = ["전체", ...Array.from(new Set(menuItems.map((item) => item.category)))];
   const visibleMenu = menuItems.filter((item) => category === "전체" || item.category === category);
@@ -58,7 +60,8 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
     setSubmitting(true);
     try {
       if (demoMode) {
-        const demoOrder = { orderNumber: fulfillment === "TAKEOUT" ? "P053" : "A052", publicToken: null };
+        const orderNumber = fulfillment === "TAKEOUT" ? "P053" : "A052";
+        const demoOrder = { orderNumber, publicToken: null, initialOrder: buildInitialOrder(orderNumber, fulfillment, tableNumber ?? null, totalAmount, cartItems) };
         setCreatedOrder(demoOrder);
         setCartOpen(false);
         setOrderComplete(true);
@@ -72,7 +75,8 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
       const result: unknown = await response.json();
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "message" in result ? String(result.message) : "주문을 접수하지 못했습니다. 메뉴와 재고를 다시 확인해 주세요.");
       if (typeof result !== "object" || result === null || !("order_number" in result) || !("public_token" in result)) throw new Error("주문 결과를 확인하지 못했습니다. 다시 시도해 주세요.");
-      setCreatedOrder({ orderNumber: String(result.order_number), publicToken: String(result.public_token) });
+      const orderNumber = String(result.order_number);
+      setCreatedOrder({ orderNumber, publicToken: String(result.public_token), initialOrder: buildInitialOrder(orderNumber, fulfillment, tableNumber ?? null, totalAmount, cartItems) });
       setCartOpen(false);
       setOrderComplete(true);
     } catch (error) {
@@ -85,39 +89,44 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
   const claimTransfer = async () => {
     if (!createdOrder?.publicToken) { setTransferClaimed(true); return; }
     const response = await fetch("/api/orders/transfer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicToken: createdOrder.publicToken }) });
-    if (response.ok) setTransferClaimed(true);
+    if (response.ok) {
+      setTransferClaimed(true);
+      await refreshOrder();
+    }
   };
 
   if (orderComplete) {
+    const currentOrder = syncedOrder ?? createdOrder?.initialOrder ?? null;
+    const displayOrder = currentOrder && transferClaimed && currentOrder.payment_status === "UNPAID"
+      ? { ...currentOrder, payment_status: "CUSTOMER_MARKED_TRANSFERRED" as const }
+      : currentOrder;
+    const paymentClaimed = displayOrder?.payment_status !== "UNPAID";
+    const awaitingPayment = displayOrder?.order_status === "PENDING_PAYMENT";
     return (
       <main className="customer-shell status-shell">
         <header className="customer-topbar">
           <Link className="round-button" href="/" aria-label="처음으로"><ArrowLeft size={20} /></Link>
           <span className="topbar-title">주문 현황</span><span className="topbar-spacer" />
         </header>
-        <section className="order-success">
+        <section className="order-success" aria-live="polite">
           <div className="success-icon"><Check size={34} /></div>
-          <p className="success-kicker">주문이 접수되었어요</p>
+          <p className="success-kicker">실시간 주문 현황</p>
           <h1>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</h1>
           <div className="fulfillment-pill">{fulfillment === "TAKEOUT" ? <><ShoppingBag size={17} /> 포장 주문</> : <><UtensilsCrossed size={17} /> 테이블 {tableNumber ?? 7}</>}</div>
-          <p className="success-copy">입금 후 아래 버튼을 꼭 눌러주세요.<br />운영자가 확인하면 바로 조리를 시작해요.</p>
+          <span className={`customer-live-chip ${connected || demoMode ? "connected" : ""}`}><i /> {connected || demoMode ? "2초마다 자동 갱신" : "상태 연결 중"}{lastUpdatedAt && ` · ${lastUpdatedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</span>
+          <p className="success-copy">{displayOrder ? publicOrderStatusMessage(displayOrder) : "주문 상태를 불러오고 있어요."}</p>
         </section>
-        <section className="transfer-card">
+        {awaitingPayment && <section className="transfer-card">
           <div className="transfer-head"><span>입금 계좌</span><strong>{formatWon(totalAmount)}</strong></div>
           <div className="bank-account"><span>{storeSettings.bankName}</span><strong>{storeSettings.accountNumber}</strong><small>예금주 · {storeSettings.accountHolder}</small></div>
           <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요.</p>
-        </section>
-        <div className="status-progress-card">
-          <div className="progress-step done"><span><Check size={16} /></span><div><strong>주문 확인</strong><small>주문번호가 발급됐어요</small></div></div>
-          <i /><div className={`progress-step ${transferClaimed ? "active" : ""}`}><span>2</span><div><strong>{transferClaimed ? "입금 확인 중" : "입금 대기"}</strong><small>{transferClaimed ? "운영자가 확인하고 있어요" : "계좌이체 후 알려주세요"}</small></div></div>
-          <i /><div className="progress-step"><span>3</span><div><strong>주문 승인 · 조리</strong><small>승인 후 바로 준비할게요</small></div></div>
-          <i /><div className="progress-step"><span>4</span><div><strong>조리 완료</strong><small>{fulfillment === "TAKEOUT" ? "부스에서 번호를 보여주세요" : "테이블로 가져다드려요"}</small></div></div>
-        </div>
+        </section>}
+        {displayOrder && <LiveOrderProgress order={displayOrder} />}
         {createdOrder?.publicToken && <Link className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></Link>}
-        <div className="sticky-order-action">
-          <button className="checkout-button" type="button" disabled={transferClaimed} onClick={claimTransfer}>{transferClaimed ? <><Check size={20} /> 입금 확인을 요청했어요</> : "입금했어요"}</button>
+        {awaitingPayment && <div className="sticky-order-action">
+          <button className="checkout-button" type="button" disabled={paymentClaimed} onClick={claimTransfer}>{paymentClaimed ? <><Check size={20} /> 입금 확인을 요청했어요</> : "입금했어요"}</button>
           <small>이 버튼은 입금 완료가 아닌 확인 요청이에요.</small>
-        </div>
+        </div>}
       </main>
     );
   }
@@ -168,4 +177,32 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
       </section></div>}
     </main>
   );
+}
+
+function buildInitialOrder(orderNumber: string, fulfillmentType: FulfillmentType, currentTableNumber: number | null, totalAmount: number, items: Array<MenuItem & { quantity: number }>): PublicOrder {
+  return {
+    order_number: orderNumber,
+    fulfillment_type: fulfillmentType,
+    table_number: fulfillmentType === "DINE_IN" ? currentTableNumber : null,
+    total_amount: totalAmount,
+    order_status: "PENDING_PAYMENT",
+    payment_status: "UNPAID",
+    items: items.map((item) => ({ name: item.name, quantity: item.quantity, subtotal: item.price * item.quantity })),
+  };
+}
+
+function LiveOrderProgress({ order }: { order: PublicOrder }) {
+  const step = publicOrderProgressStep(order);
+  const finalLabel = order.fulfillment_type === "DINE_IN" ? "제공 완료" : "수령 완료";
+  const stages = [
+    { title: "주문 접수", icon: <Check size={17} /> },
+    { title: "입금 확인", icon: <WalletCards size={17} /> },
+    { title: "주문 승인", icon: <Check size={17} /> },
+    { title: "조리 중", icon: <ChefHat size={17} /> },
+    { title: "조리 완료", icon: <ShoppingBag size={17} /> },
+    { title: finalLabel, icon: <PackageCheck size={17} /> },
+  ];
+  return <section className={`tracker-progress live-order-progress ${step < 0 ? "cancelled" : ""}`} aria-label="실시간 주문 진행 단계">
+    {stages.map((stage, index) => <div className={index < step ? "done" : index === step ? "active" : ""} key={stage.title}><span>{index < step ? <Check size={17} /> : stage.icon}</span><strong>{stage.title}</strong><small>{step < 0 ? "중단" : index === step ? "현재 단계" : index < step ? "완료" : "대기"}</small></div>)}
+  </section>;
 }

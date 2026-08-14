@@ -7,6 +7,8 @@ import {
   confirmPayment,
   customerClaimsTransfer,
   priceOrderSelections,
+  publicOrderProgressStep,
+  publicOrderStatusMessage,
   validateFulfillment,
 } from "../src/features/orders/domain/order.ts";
 import { isStoreConfigured } from "../src/features/settings/domain/store-settings.ts";
@@ -116,4 +118,25 @@ test("API 라우트는 프레젠테이션 컨트롤러만 노출한다", async (
     assert.doesNotMatch(source, /@supabase\/supabase-js|\.from\(|\.rpc\(/i);
     assert.match(source, /controller/i);
   }
+});
+
+test("고객 주문 단계와 조리 안내 문구를 실제 상태에 맞게 계산한다", () => {
+  const base = { fulfillment_type: "TAKEOUT", order_status: "PENDING_PAYMENT", payment_status: "UNPAID" };
+  assert.equal(publicOrderProgressStep(base), 0);
+  assert.equal(publicOrderProgressStep({ ...base, payment_status: "CUSTOMER_MARKED_TRANSFERRED" }), 1);
+  assert.equal(publicOrderProgressStep({ ...base, order_status: "PAID", payment_status: "CONFIRMED" }), 2);
+  assert.equal(publicOrderProgressStep({ ...base, order_status: "COOKING", payment_status: "CONFIRMED" }), 3);
+  assert.equal(publicOrderProgressStep({ ...base, order_status: "READY", payment_status: "CONFIRMED" }), 4);
+  assert.match(publicOrderStatusMessage({ ...base, order_status: "COOKING", payment_status: "CONFIRMED" }), /조리하고/);
+  assert.match(publicOrderStatusMessage({ ...base, order_status: "READY", payment_status: "CONFIRMED" }), /준비가 끝났/);
+});
+
+test("고객 주문 현황은 2초 주기와 화면 복귀 시 즉시 동기화한다", async () => {
+  const hook = await readFile(new URL("../src/features/orders/presentation/use-public-order-status.ts", import.meta.url), "utf8");
+  const customer = await readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8");
+  assert.match(hook, /setInterval\(sync, 2000\)/);
+  assert.match(hook, /visibilitychange/);
+  assert.match(hook, /addEventListener\("focus"/);
+  assert.match(customer, /aria-live="polite"/);
+  assert.match(customer, /조리 중/);
 });

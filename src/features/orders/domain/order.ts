@@ -13,6 +13,25 @@ export interface PublicOrder {
   items: Array<{ name: string; quantity: number; subtotal: number }>;
 }
 
+export function publicOrderProgressStep(order: Pick<PublicOrder, "order_status" | "payment_status">): number {
+  if (order.order_status === "CANCELLED") return -1;
+  if (order.order_status === "PENDING_PAYMENT") return order.payment_status === "CUSTOMER_MARKED_TRANSFERRED" ? 1 : 0;
+  if (order.order_status === "PAID") return 2;
+  if (order.order_status === "COOKING") return 3;
+  if (order.order_status === "READY") return 4;
+  return 5;
+}
+
+export function publicOrderStatusMessage(order: Pick<PublicOrder, "order_status" | "payment_status" | "fulfillment_type">): string {
+  if (order.order_status === "CANCELLED") return "취소된 주문입니다. 운영 부스에 문의해 주세요.";
+  if (order.order_status === "SERVED") return order.fulfillment_type === "DINE_IN" ? "테이블 제공이 완료됐습니다. 맛있게 드세요!" : "수령 완료된 주문입니다. 감사합니다!";
+  if (order.order_status === "READY") return order.fulfillment_type === "DINE_IN" ? "조리가 완료됐어요. 곧 테이블로 가져다드릴게요." : "포장 준비가 끝났어요! 부스에서 주문번호를 보여주세요.";
+  if (order.order_status === "COOKING") return "지금 맛있게 조리하고 있어요. 완료되면 이 화면에 바로 표시됩니다.";
+  if (order.order_status === "PAID") return "입금 확인이 완료됐어요. 곧 조리를 시작합니다.";
+  if (order.payment_status === "CUSTOMER_MARKED_TRANSFERRED") return "입금 확인을 요청했어요. 운영자가 확인하면 바로 알려드릴게요.";
+  return "계좌이체 후 ‘입금했어요’를 눌러주세요.";
+}
+
 export interface OrderLineInput { menuItemId: string; quantity: number }
 export interface PricedOrderLine extends OrderLineInput { menuName: string; unitPrice: number; subtotal: number }
 export interface MenuPricingRecord { id: string; name: string; price: number; status: "AVAILABLE" | "SOLD_OUT" | "HIDDEN" | "ARCHIVED"; stockQuantity: number }
