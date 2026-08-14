@@ -18,6 +18,15 @@ export interface MenuItem {
   emoji: string;
 }
 
+export interface MenuDraft {
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  status: MenuStatus;
+  stockQuantity: number;
+}
+
 export function isOrderable(item: MenuItem, quantity = 1): boolean {
   return item.status === "AVAILABLE" && quantity > 0 && item.stockQuantity >= quantity;
 }

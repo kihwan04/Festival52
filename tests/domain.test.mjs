@@ -9,6 +9,7 @@ import {
   priceOrderSelections,
   validateFulfillment,
 } from "../src/features/orders/domain/order.ts";
+import { isStoreConfigured } from "../src/features/settings/domain/store-settings.ts";
 
 const menu = [
   { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3 },
@@ -85,4 +86,34 @@ test("Supabase 공개·관리자 권한을 분리하고 첫 관리자 생성을 
   assert.match(hardening, /grant execute on function public\.admin_process_order\(uuid, text\) to authenticated/i);
   assert.match(bootstrap, /lock table public\.profiles in exclusive mode/i);
   assert.match(bootstrap, /not exists\(select 1 from public\.profiles\)/i);
+});
+
+test("계좌 정보가 모두 있어야 매장 설정이 완료된다", () => {
+  assert.equal(isStoreConfigured({ bankName: "은행", accountNumber: "123", accountHolder: "컴공" }), true);
+  assert.equal(isStoreConfigured({ bankName: "은행", accountNumber: "", accountHolder: "컴공" }), false);
+});
+
+test("최종 마이그레이션은 닫힌 매장 주문을 차단하고 교착을 예방한다", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20260814103059_final_architecture_and_store_settings.sql", import.meta.url), "utf8");
+  assert.match(sql, /create table if not exists public\.store_settings/i);
+  assert.match(sql, /raise exception 'store closed'/i);
+  assert.match(sql, /order by value->>'menu_item_id'/i);
+  assert.match(sql, /revoke insert, update, delete on public\.menu_items from authenticated/i);
+  assert.match(sql, /create_festival_menu_item/i);
+  assert.match(sql, /update_store_settings/i);
+});
+
+test("API 라우트는 프레젠테이션 컨트롤러만 노출한다", async () => {
+  const routes = [
+    "../app/api/orders/route.ts",
+    "../app/api/admin/menu/route.ts",
+    "../app/api/admin/settings/route.ts",
+    "../app/api/admin/snapshot/route.ts",
+    "../app/api/auth/login/route.ts",
+  ];
+  for (const route of routes) {
+    const source = await readFile(new URL(route, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /@supabase\/supabase-js|\.from\(|\.rpc\(/i);
+    assert.match(source, /controller/i);
+  }
 });

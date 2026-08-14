@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import QRCode from "qrcode";
@@ -9,9 +8,11 @@ import { AlertTriangle, Archive, BarChart3, Bell, Check, ChefHat, ChevronRight, 
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
 import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
+import type { AdminSnapshot, SalesSummary } from "@/src/features/admin/domain/admin-snapshot";
+import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
-type View = "orders" | "inventory" | "tables";
+type View = "orders" | "inventory" | "tables" | "sales" | "settings";
 type MenuDraft = Pick<MenuItem, "name" | "description" | "price" | "category" | "status" | "stockQuantity">;
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -20,52 +21,91 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 const MENU_STATUS_LABEL: Record<MenuStatus, string> = { AVAILABLE: "판매 중", SOLD_OUT: "품절", HIDDEN: "숨김", ARCHIVED: "보관" };
 
 interface AdminDashboardProps {
-  initialOrders?: DemoOrder[];
-  initialMenu?: MenuItem[];
-  initialTables?: FestivalTable[];
-  initialCategories?: string[];
+  initialSnapshot?: AdminSnapshot;
   demoMode?: boolean;
 }
 
+const DEMO_SALES: SalesSummary = {
+  totalRevenue: DEMO_ORDERS.filter((order) => order.paymentStatus === "CONFIRMED").reduce((sum, order) => sum + order.totalAmount, 0),
+  confirmedOrders: DEMO_ORDERS.filter((order) => order.paymentStatus === "CONFIRMED").length,
+  dineInOrders: DEMO_ORDERS.filter((order) => order.paymentStatus === "CONFIRMED" && order.fulfillmentType === "DINE_IN").length,
+  takeoutOrders: DEMO_ORDERS.filter((order) => order.paymentStatus === "CONFIRMED" && order.fulfillmentType === "TAKEOUT").length,
+  averageOrderAmount: 15333,
+};
+
+const DEMO_SNAPSHOT: AdminSnapshot = {
+  orders: DEMO_ORDERS,
+  menu: DEMO_MENU,
+  tables: DEMO_TABLES,
+  categories: ["안주", "식사", "간식", "음료"],
+  settings: DEMO_STORE_SETTINGS,
+  sales: DEMO_SALES,
+  syncedAt: new Date().toISOString(),
+};
+
 export function AdminDashboard({
-  initialOrders = DEMO_ORDERS,
-  initialMenu = DEMO_MENU,
-  initialTables = DEMO_TABLES,
-  initialCategories = ["안주", "식사", "간식", "음료"],
+  initialSnapshot = DEMO_SNAPSHOT,
   demoMode = true,
 }: AdminDashboardProps) {
-  const router = useRouter();
   const [view, setView] = useState<View>("orders");
   const [filter, setFilter] = useState<Filter>("ALL");
-  const [orders, setOrders] = useState<DemoOrder[]>(initialOrders);
-  const [menu, setMenu] = useState<MenuItem[]>(initialMenu);
-  const [tables, setTables] = useState<FestivalTable[]>(initialTables);
-  const [categories, setCategories] = useState<string[]>(initialCategories);
+  const [orders, setOrders] = useState<DemoOrder[]>(initialSnapshot.orders);
+  const [menu, setMenu] = useState<MenuItem[]>(initialSnapshot.menu);
+  const [tables, setTables] = useState<FestivalTable[]>(initialSnapshot.tables);
+  const [categories, setCategories] = useState<string[]>(initialSnapshot.categories);
+  const [settings, setSettings] = useState<StoreSettings>(initialSnapshot.settings);
+  const [sales, setSales] = useState<SalesSummary>(initialSnapshot.sales);
+  const [syncedAt, setSyncedAt] = useState(initialSnapshot.syncedAt);
+  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setOrders(initialOrders);
-      setMenu(initialMenu);
-      setTables(initialTables);
-      setCategories(initialCategories);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [initialCategories, initialMenu, initialOrders, initialTables]);
+  const applySnapshot = useCallback((snapshot: AdminSnapshot) => {
+    setOrders(snapshot.orders);
+    setMenu(snapshot.menu);
+    setTables(snapshot.tables);
+    setCategories(snapshot.categories);
+    setSettings(snapshot.settings);
+    setSales(snapshot.sales);
+    setSyncedAt(snapshot.syncedAt);
+  }, []);
+
+  const refreshSnapshot = useCallback(async (silent = false) => {
+    if (demoMode) {
+      setSyncedAt(new Date().toISOString());
+      if (!silent) setNotice("데모 데이터가 새로고침되었습니다.");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/admin/snapshot", { cache: "no-store" });
+      if (response.status === 401 || response.status === 403) {
+        window.location.assign("/admin");
+        return;
+      }
+      if (!response.ok) throw new Error("snapshot failed");
+      applySnapshot(await response.json() as AdminSnapshot);
+      if (!silent) setNotice("최신 운영 현황을 불러왔습니다.");
+    } catch {
+      if (!silent) setNotice("운영 현황을 불러오지 못했습니다.");
+    } finally {
+      setSyncing(false);
+    }
+  }, [applySnapshot, demoMode]);
 
   useEffect(() => {
     if (demoMode) return;
-    const sync = () => router.refresh();
-    const timer = window.setInterval(sync, 5000);
+    const sync = () => void refreshSnapshot(true);
+    const timer = window.setInterval(sync, 3000);
     window.addEventListener("focus", sync);
-    document.addEventListener("visibilitychange", sync);
+    const onVisibility = () => { if (document.visibilityState === "visible") sync(); };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", sync);
-      document.removeEventListener("visibilitychange", sync);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [demoMode, router]);
+  }, [demoMode, refreshSnapshot]);
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -88,7 +128,7 @@ export function AdminDashboard({
     if (!demoMode) {
       const response = await fetch(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
       if (!response.ok) { showNotice("주문 상태를 바꾸지 못했습니다."); return; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else {
       setOrders((current) => current.map((order) => {
         if (order.id !== id) return order;
@@ -106,7 +146,7 @@ export function AdminDashboard({
     if (!demoMode) {
       const response = await fetch(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "CANCEL" }) });
       if (!response.ok) { showNotice("주문을 취소하지 못했습니다."); return; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else {
       setOrders((current) => current.map((order) => order.id === id ? { ...order, orderStatus: "CANCELLED" } : order));
     }
@@ -117,7 +157,7 @@ export function AdminDashboard({
     if (!demoMode) {
       const response = await fetch(`/api/admin/menu/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ quantityChange, reason: quantityChange > 0 ? "추가 입고" : "운영 조정" }) });
       if (!response.ok) { showNotice("재고를 조정하지 못했습니다."); return; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else {
       setMenu((current) => current.map((item) => item.id === id ? {
         ...item,
@@ -136,7 +176,7 @@ export function AdminDashboard({
         body: JSON.stringify(id ? { name: draft.name, description: draft.description, price: draft.price, category: draft.category, status: draft.status } : draft),
       });
       if (!response.ok) { showNotice((await response.json().catch(() => null) as { message?: string } | null)?.message ?? "메뉴를 저장하지 못했습니다."); return false; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else if (id) {
       setMenu((current) => current.map((item) => item.id === id ? { ...item, ...draft } : item));
     } else {
@@ -152,7 +192,7 @@ export function AdminDashboard({
     if (!demoMode) {
       const response = await fetch("/api/admin/categories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: normalized }) });
       if (!response.ok) { showNotice("카테고리를 추가하지 못했습니다."); return false; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else setCategories((current) => [...current, normalized]);
     showNotice("카테고리가 추가되었습니다.");
     return true;
@@ -164,7 +204,7 @@ export function AdminDashboard({
     if (!demoMode) {
       const response = await fetch("/api/admin/categories", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ previousName, nextName: normalized }) });
       if (!response.ok) { showNotice("카테고리 이름을 바꾸지 못했습니다."); return false; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else {
       setCategories((current) => current.map((item) => item === previousName ? normalized : item));
       setMenu((current) => current.map((item) => item.category === previousName ? { ...item, category: normalized } : item));
@@ -179,7 +219,7 @@ export function AdminDashboard({
     if (!demoMode) {
       const response = await fetch("/api/admin/categories", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
       if (!response.ok) { showNotice("카테고리를 삭제하지 못했습니다."); return false; }
-      router.refresh();
+      await refreshSnapshot(true);
     } else setCategories((current) => current.filter((item) => item !== name));
     showNotice("카테고리가 삭제되었습니다.");
     return true;
@@ -193,7 +233,7 @@ export function AdminDashboard({
       if (!response.ok) { showNotice("테이블을 설정하지 못했습니다."); return; }
       const rows = await response.json() as Array<{ id: string; table_number: number; qr_token: string; is_active: boolean }>;
       setTables(rows.map((row) => ({ id: row.id, tableNumber: row.table_number, qrToken: row.qr_token, isActive: row.is_active })));
-      router.refresh();
+      await refreshSnapshot(true);
     } else {
       setTables((current) => Array.from({ length: Math.max(count, current.length) }, (_, index) => {
         const tableNumber = index + 1;
@@ -216,7 +256,7 @@ export function AdminDashboard({
       if (!response.ok) { showNotice("QR을 재발급하지 못했습니다."); return; }
       const payload = await response.json() as { qrToken: string };
       setTables((current) => current.map((item) => item.id === table.id ? { ...item, qrToken: payload.qrToken } : item));
-      router.refresh();
+      await refreshSnapshot(true);
     } else {
       const token = `demo-table-${table.tableNumber}-qr-${crypto.randomUUID()}`;
       setTables((current) => current.map((item) => item.id === table.id ? { ...item, qrToken: token } : item));
@@ -227,7 +267,40 @@ export function AdminDashboard({
   const pendingPayments = orders.filter((order) => order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED").length;
   const cookingCount = orders.filter((order) => order.orderStatus === "COOKING" || order.orderStatus === "PAID").length;
   const readyCount = orders.filter((order) => order.orderStatus === "READY").length;
-  const title = view === "orders" ? "실시간 주문 관리" : view === "inventory" ? "메뉴·재고 관리" : "테이블·QR 설정";
+  const title: Record<View, string> = {
+    orders: "실시간 주문 관리",
+    inventory: "메뉴·재고 관리",
+    tables: "테이블·QR 설정",
+    sales: "매출 현황",
+    settings: "매장 설정",
+  };
+
+  const saveSettings = async (draft: StoreSettings): Promise<boolean> => {
+    if (demoMode) {
+      setSettings({ ...draft, configured: Boolean(draft.bankName && draft.accountNumber && draft.accountHolder) });
+      showNotice("데모 매장 설정이 저장되었습니다.");
+      return true;
+    }
+    const response = await fetch("/api/admin/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    const payload = await response.json().catch(() => null) as StoreSettings | { message?: string } | null;
+    if (!response.ok) {
+      showNotice(payload && "message" in payload ? payload.message ?? "매장 설정을 저장하지 못했습니다." : "매장 설정을 저장하지 못했습니다.");
+      return false;
+    }
+    setSettings(payload as StoreSettings);
+    await refreshSnapshot(true);
+    showNotice("매장 설정이 저장되었습니다.");
+    return true;
+  };
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.assign("/admin");
+  };
 
   return (
     <main className="admin-shell">
@@ -236,16 +309,17 @@ export function AdminDashboard({
         <nav aria-label="운영 메뉴">
           <button type="button" className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><ClipboardList size={20} /> 주문 관리 <b>{orders.filter((item) => item.orderStatus !== "SERVED" && item.orderStatus !== "CANCELLED").length}</b></button>
           <button type="button" className={view === "inventory" ? "active" : ""} onClick={() => setView("inventory")}><Package size={20} /> 메뉴·재고 <b className="warn-count">{menu.filter((item) => item.stockQuantity <= 5 && item.status !== "ARCHIVED").length}</b></button>
-          <button type="button" disabled><BarChart3 size={20} /> 매출 현황</button>
+          <button type="button" className={view === "sales" ? "active" : ""} onClick={() => setView("sales")}><BarChart3 size={20} /> 매출 현황</button>
           <button type="button" className={view === "tables" ? "active" : ""} onClick={() => setView("tables")}><LayoutGrid size={20} /> 테이블·QR</button>
+          <button type="button" className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={20} /> 매장 설정</button>
         </nav>
-        <div className="sidebar-bottom"><button type="button"><Settings size={19} /> 매장 설정</button><div className="admin-profile"><span>운</span><div><strong>운영 관리자</strong><small><i /> 근무 중</small></div><ChevronRight size={17} /></div></div>
+        <div className="sidebar-bottom"><div className="admin-profile"><span>운</span><div><strong>운영 관리자</strong><small><i /> 근무 중</small></div><ChevronRight size={17} /></div></div>
       </aside>
 
       <section className="admin-main">
         <header className="admin-topbar">
-          <div><h1>{title}</h1><p><span className="live-dot" /> 자동 동기화 · 창 복귀 시 즉시 갱신</p></div>
-          <div className="admin-tools">{view === "orders" && <div className="admin-search"><Search size={18} /><input aria-label="주문 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="주문번호, 메뉴 검색" /></div>}<button type="button" className="icon-button" aria-label="새 알림"><Bell size={20} /><i /></button></div>
+          <div><h1>{title[view]}</h1><p><span className="live-dot" /> {syncing ? "동기화 중" : `3초마다 동기화 · ${new Date(syncedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</p></div>
+          <div className="admin-tools">{view === "orders" && <div className="admin-search"><Search size={18} /><input aria-label="주문 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="주문번호, 메뉴 검색" /></div>}<button type="button" className="icon-button" aria-label="입금 확인 주문 보기" onClick={() => { setView("orders"); setFilter("PAYMENT"); showNotice(pendingPayments ? `입금 확인이 필요한 주문 ${pendingPayments}건입니다.` : "확인할 입금 알림이 없습니다."); }}><Bell size={20} />{pendingPayments > 0 && <i />}</button></div>
         </header>
 
         {view === "orders" ? <>
@@ -253,24 +327,67 @@ export function AdminDashboard({
             <article><span className="stat-icon payment"><WalletCards size={22} /></span><div><small>입금 확인 필요</small><strong>{pendingPayments}<em>건</em></strong></div><button type="button" onClick={() => setFilter("PAYMENT")}>바로 보기 <ChevronRight size={15} /></button></article>
             <article><span className="stat-icon cooking"><CookingPot size={22} /></span><div><small>조리 대기·진행</small><strong>{cookingCount}<em>건</em></strong></div><span className="trend">평균 8분</span></article>
             <article><span className="stat-icon ready"><Check size={22} /></span><div><small>조리 완료</small><strong>{readyCount}<em>건</em></strong></div><button type="button" onClick={() => setFilter("READY")}>바로 보기 <ChevronRight size={15} /></button></article>
-            <article><span className="stat-icon sales"><BarChart3 size={22} /></span><div><small>오늘 매출</small><strong className="money">₩ 1,284,000</strong></div><span className="trend up">테이블·포장 통합</span></article>
+            <article><span className="stat-icon sales"><BarChart3 size={22} /></span><div><small>확정 매출</small><strong className="money">{formatWon(sales.totalRevenue)}</strong></div><button type="button" onClick={() => setView("sales")}>자세히 <ChevronRight size={15} /></button></article>
           </section>
 
           <div className="order-toolbar">
             <div className="admin-filters" role="tablist" aria-label="주문 필터">
               {([ ["ALL", "전체"], ["DINE_IN", "테이블"], ["TAKEOUT", "포장"], ["PAYMENT", "입금 확인"], ["COOKING", "조리 중"], ["READY", "조리 완료"] ] as Array<[Filter, string]>).map(([value, label]) => <button type="button" role="tab" aria-selected={filter === value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{label}{value === "PAYMENT" && pendingPayments > 0 && <b>{pendingPayments}</b>}</button>)}
             </div>
-            <button className="refresh-button" type="button" onClick={() => router.refresh()}><RefreshCw size={16} /> 새로고침</button>
+            <button className="refresh-button" type="button" disabled={syncing} onClick={() => void refreshSnapshot()}><RefreshCw size={16} /> 새로고침</button>
           </div>
 
           <section className="orders-grid" aria-label="주문 목록">
             {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>해당 주문을 모두 처리했어요</strong><span>새 주문이 들어오면 자동으로 표시됩니다.</span></div> : visibleOrders.map((order) => <OrderCard order={order} onAdvance={advance} onCancel={cancel} key={order.id} />)}
           </section>
-        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : <TablesView tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} />}
+        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView sales={sales} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
       {notice && <div className="admin-toast"><Check size={17} /> {notice}</div>}
     </main>
   );
+}
+
+function SalesView({ sales }: { sales: SalesSummary }) {
+  return <section className="sales-view">
+    <div className="sales-hero">
+      <div><small>CONFIRMED REVENUE</small><h2>{formatWon(sales.totalRevenue)}</h2><p>관리자가 입금을 확인한 주문만 매출에 포함됩니다.</p></div>
+      <BarChart3 size={42} />
+    </div>
+    <div className="sales-summary-grid">
+      <article><small>결제 확정 주문</small><strong>{sales.confirmedOrders}<em>건</em></strong></article>
+      <article><small>평균 주문 금액</small><strong>{formatWon(sales.averageOrderAmount)}</strong></article>
+      <article><small>테이블 주문</small><strong>{sales.dineInOrders}<em>건</em></strong></article>
+      <article><small>포장 주문</small><strong>{sales.takeoutOrders}<em>건</em></strong></article>
+    </div>
+    <div className="sales-note"><WalletCards size={19} /><div><strong>현금·계좌이체 운영 기준</strong><p>고객의 “송금 완료” 표시만으로는 매출이 잡히지 않습니다. 실제 입금을 확인한 뒤 주문 관리에서 입금 확인을 눌러 주세요.</p></div></div>
+  </section>;
+}
+
+function SettingsView({ settings, onSave, onLogout }: { settings: StoreSettings; onSave: (draft: StoreSettings) => Promise<boolean>; onLogout: () => Promise<void> }) {
+  const [draft, setDraft] = useState(settings);
+  const [saving, setSaving] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    await onSave(draft);
+    setSaving(false);
+  };
+  const readyToOpen = Boolean(draft.bankName.trim() && draft.accountNumber.trim() && draft.accountHolder.trim());
+  return <section className="settings-view">
+    <form className="settings-card" onSubmit={submit}>
+      <div className="settings-heading"><div><small>STORE CONTROL</small><h2>축제 매장 운영 설정</h2><p>고객 주문 화면의 상호, 계좌, 영업 상태에 즉시 반영됩니다.</p></div><Store size={28} /></div>
+      {!readyToOpen && <div className="settings-warning"><AlertTriangle size={18} /><span>실제 계좌 정보를 모두 입력해야 주문 접수를 시작할 수 있습니다.</span></div>}
+      <div className="settings-form-grid">
+        <label>부스 이름<input required maxLength={80} value={draft.stallName} onChange={(event) => setDraft({ ...draft, stallName: event.target.value })} /></label>
+        <label>운영 시간<input required maxLength={80} value={draft.operatingHours} onChange={(event) => setDraft({ ...draft, operatingHours: event.target.value })} /></label>
+        <label>은행<input maxLength={40} placeholder="예: 카카오뱅크" value={draft.bankName} onChange={(event) => setDraft({ ...draft, bankName: event.target.value })} /></label>
+        <label>예금주<input maxLength={60} placeholder="실제 예금주" value={draft.accountHolder} onChange={(event) => setDraft({ ...draft, accountHolder: event.target.value })} /></label>
+        <label className="wide">계좌번호<input maxLength={60} inputMode="numeric" placeholder="하이픈 포함 가능" value={draft.accountNumber} onChange={(event) => setDraft({ ...draft, accountNumber: event.target.value })} /></label>
+      </div>
+      <label className={`store-open-toggle ${draft.isOpen ? "open" : ""}`}><span><strong>{draft.isOpen ? "주문 접수 중" : "주문 접수 중지"}</strong><small>{draft.isOpen ? "고객이 새 주문을 제출할 수 있습니다." : "메뉴는 보이지만 새 주문은 차단됩니다."}</small></span><input type="checkbox" aria-label="주문 접수 여부" checked={draft.isOpen} disabled={!readyToOpen && !draft.isOpen} onChange={(event) => setDraft({ ...draft, isOpen: event.target.checked })} /><i /></label>
+      <div className="settings-actions"><button type="button" className="logout-button" onClick={() => void onLogout()}>관리자 로그아웃</button><button type="submit" disabled={saving || (draft.isOpen && !readyToOpen)}><Check size={16} /> {saving ? "저장 중" : "설정 저장"}</button></div>
+    </form>
+  </section>;
 }
 
 function OrderCard({ order, onAdvance, onCancel }: { order: DemoOrder; onAdvance: (id: string) => void; onCancel: (id: string) => void }) {

@@ -1,6 +1,17 @@
 export type FulfillmentType = "DINE_IN" | "TAKEOUT";
 export type OrderStatus = "PENDING_PAYMENT" | "PAID" | "COOKING" | "READY" | "SERVED" | "CANCELLED";
 export type PaymentStatus = "UNPAID" | "CUSTOMER_MARKED_TRANSFERRED" | "CONFIRMED" | "REJECTED";
+export type AdminOrderAction = "CONFIRM_PAYMENT" | "START_COOKING" | "MARK_READY" | "MARK_SERVED" | "CANCEL";
+
+export interface PublicOrder {
+  order_number: string;
+  fulfillment_type: FulfillmentType;
+  table_number: number | null;
+  total_amount: number;
+  order_status: OrderStatus;
+  payment_status: PaymentStatus;
+  items: Array<{ name: string; quantity: number; subtotal: number }>;
+}
 
 export interface OrderLineInput { menuItemId: string; quantity: number }
 export interface PricedOrderLine extends OrderLineInput { menuName: string; unitPrice: number; subtotal: number }

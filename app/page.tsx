@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, ChefHat, QrCode, ShieldCheck, UtensilsCrossed } from "lucide-react";
+import { loadPublicStoreSettings } from "@/src/features/settings/infrastructure/public-store-settings";
 import { isDemoMode } from "@/src/lib/supabase/server";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
   const demoMode = isDemoMode();
+  const settings = await loadPublicStoreSettings();
+  const acceptingOrders = settings.isOpen && settings.configured;
   return (
     <main className="landing-shell">
       <nav className="landing-nav" aria-label="주요 메뉴">
@@ -16,7 +21,7 @@ export default function Home() {
 
       <section className="hero-section">
         <div className="hero-copy">
-          <div className="eyebrow"><span className="live-dot" /> 지금 주문 가능해요</div>
+          <div className="eyebrow"><span className="live-dot" /> {acceptingOrders ? "지금 주문 가능해요" : "메뉴를 준비하고 있어요"}</div>
           <h1>줄 서지 말고,<br /><em>맛있는 축제</em>를 즐겨요.</h1>
           <p>QR로 메뉴를 고르고 계좌이체 후 알려주세요.<br />입금 확인부터 조리 완료까지 실시간으로 안내해 드려요.</p>
           <div className="hero-actions">
@@ -46,7 +51,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="landing-footer"><span>52 FESTIVAL · 오늘도 맛있는 밤</span><span>운영시간 17:00 — 23:30</span></footer>
+      <footer className="landing-footer"><span>{settings.stallName} · 오늘도 맛있는 밤</span><span>운영시간 {settings.operatingHours}</span></footer>
     </main>
   );
 }

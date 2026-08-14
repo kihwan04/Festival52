@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { CustomerOrder } from "@/src/components/CustomerOrder";
 import { loadPublicMenu, resolveTable } from "@/src/features/menu/infrastructure/public-menu";
+import { loadPublicStoreSettings } from "@/src/features/settings/infrastructure/public-store-settings";
 import { isDemoMode } from "@/src/lib/supabase/server";
 
 export const metadata: Metadata = { title: "테이블 주문" };
 
 export default async function TableOrderPage({ params }: { params: Promise<{ qrToken: string }> }) {
   const { qrToken } = await params;
-  const [table, menuItems] = await Promise.all([resolveTable(qrToken), loadPublicMenu()]);
+  const [table, menuItems, storeSettings] = await Promise.all([resolveTable(qrToken), loadPublicMenu(), loadPublicStoreSettings()]);
   if (!table || !menuItems) return <InvalidQr />;
-  return <CustomerOrder initialFulfillment="DINE_IN" tableNumber={table.tableNumber} qrToken={qrToken} menuItems={menuItems} demoMode={isDemoMode()} />;
+  return <CustomerOrder initialFulfillment="DINE_IN" tableNumber={table.tableNumber} qrToken={qrToken} menuItems={menuItems} storeSettings={storeSettings} demoMode={isDemoMode()} />;
 }
 
 function InvalidQr() {

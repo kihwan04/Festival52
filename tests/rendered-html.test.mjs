@@ -36,6 +36,9 @@ test("관리자 설정에서 메뉴와 테이블 QR 관리를 제공한다", asy
   assert.match(html, /메뉴·재고/);
   assert.match(html, /테이블·QR/);
   assert.match(html, /주문 관리/);
+  assert.match(html, /매출 현황/);
+  assert.match(html, /매장 설정/);
+  assert.doesNotMatch(html, /매출 현황<\/button>[^<]*disabled/i);
 });
 
 test("운영 모드의 관리자 로그인에서 첫 관리자 생성을 제공한다", async () => {

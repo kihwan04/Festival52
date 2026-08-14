@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { z } from "zod";
-import { OrderTracker, type PublicOrder } from "@/src/components/OrderTracker";
+import { OrderTracker } from "@/src/components/OrderTracker";
+import { getPublicOrder } from "@/src/features/orders/application/order-service";
+import { SupabaseOrderGateway } from "@/src/features/orders/infrastructure/supabase-order-gateway";
 import { getPublicSupabase } from "@/src/lib/supabase/server";
 
 export const metadata: Metadata = { title: "주문 현황" };
@@ -12,7 +14,7 @@ export default async function PublicOrderPage({ params }: { params: Promise<{ pu
   if (!z.string().uuid().safeParse(publicToken).success) notFound();
   const supabase = getPublicSupabase();
   if (!supabase) notFound();
-  const { data, error } = await supabase.rpc("get_public_order", { p_public_token: publicToken });
-  if (error || !data) notFound();
-  return <OrderTracker publicToken={publicToken} initialOrder={data as PublicOrder} />;
+  const order = await getPublicOrder(new SupabaseOrderGateway(supabase), publicToken).catch(() => null);
+  if (!order) notFound();
+  return <OrderTracker publicToken={publicToken} initialOrder={order} />;
 }

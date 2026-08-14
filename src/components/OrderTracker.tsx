@@ -3,12 +3,9 @@
 import { useEffect, useState } from "react";
 import { Check, ChefHat, Clock3, PackageCheck, ShoppingBag, UtensilsCrossed, WalletCards } from "lucide-react";
 import { formatWon } from "@/src/features/menu/domain/menu";
-import type { FulfillmentType, OrderStatus, PaymentStatus } from "@/src/features/orders/domain/order";
+import type { PublicOrder } from "@/src/features/orders/domain/order";
 
-export interface PublicOrder {
-  order_number: string; fulfillment_type: FulfillmentType; table_number: number | null; total_amount: number;
-  order_status: OrderStatus; payment_status: PaymentStatus; items: Array<{ name: string; quantity: number; subtotal: number }>;
-}
+export type { PublicOrder } from "@/src/features/orders/domain/order";
 
 export function OrderTracker({ publicToken, initialOrder }: { publicToken: string; initialOrder: PublicOrder }) {
   const [order, setOrder] = useState(initialOrder);
