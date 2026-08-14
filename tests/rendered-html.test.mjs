@@ -28,3 +28,12 @@ test("포장 주문 메뉴를 서버 렌더링한다", async () => {
   assert.match(html, /화끈 제육볶음/);
   assert.match(html, /포장/);
 });
+
+test("관리자 설정에서 메뉴와 테이블 QR 관리를 제공한다", async () => {
+  const response = await render("/admin");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /메뉴·재고/);
+  assert.match(html, /테이블·QR/);
+  assert.match(html, /주문 관리/);
+});

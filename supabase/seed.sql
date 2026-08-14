@@ -11,3 +11,7 @@ insert into public.menu_items(id, name, description, price, category, status, st
   ('66666666-6666-4666-8666-666666666666', '청포도 에이드', '상큼한 청포도와 톡 쏘는 탄산', 4000, '음료', 'AVAILABLE', 21, 60)
 on conflict (id) do update set name = excluded.name, description = excluded.description, price = excluded.price,
   category = excluded.category, status = excluded.status, stock_quantity = excluded.stock_quantity, sort_order = excluded.sort_order;
+
+insert into public.menu_categories(name, sort_order) values
+  ('안주', 1), ('식사', 2), ('간식', 3), ('음료', 4)
+on conflict (name) do update set sort_order = excluded.sort_order;

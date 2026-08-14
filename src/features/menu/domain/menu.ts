@@ -1,6 +1,8 @@
 export type MenuStatus = "AVAILABLE" | "SOLD_OUT" | "HIDDEN" | "ARCHIVED";
 
-export type MenuCategory = "안주" | "식사" | "간식" | "음료";
+// Categories are managed by festival staff, so production data is intentionally
+// not limited to the four demo categories.
+export type MenuCategory = string;
 
 export interface MenuItem {
   id: string;

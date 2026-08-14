@@ -28,7 +28,12 @@ export async function loadPublicMenu(): Promise<MenuItem[] | null> {
 const tableSchema = z.object({ id: z.string().uuid(), table_number: z.number().int().positive() });
 
 export async function resolveTable(qrToken: string): Promise<{ id: string; tableNumber: number } | null> {
-  if (isDemoMode() && qrToken === "table-7-demo") return { id: "00000000-0000-4000-8000-000000000007", tableNumber: 7 };
+  if (isDemoMode()) {
+    const demoTableNumber = qrToken === "table-7-demo" ? 7 : Number(/^demo-table-(\d+)-qr-[a-z0-9-]+$/i.exec(qrToken)?.[1]);
+    if (Number.isInteger(demoTableNumber) && demoTableNumber > 0 && demoTableNumber <= 200) {
+      return { id: `00000000-0000-4000-8000-${String(demoTableNumber).padStart(12, "0")}`, tableNumber: demoTableNumber };
+    }
+  }
   const supabase = getPublicSupabase();
   if (!supabase) return null;
   const { data, error } = await supabase.rpc("resolve_festival_table", { p_qr_token: qrToken });

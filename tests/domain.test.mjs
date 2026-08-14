@@ -63,3 +63,17 @@ test("결제 확정과 주문 PAID 변경이 동일 DB 함수에 있다", async 
   assert.match(adminFunction, /status = 'PAID'/i);
   assert.match(adminFunction, /public\.is_festival_admin\(\)/i);
 });
+
+test("업데이트된 운영 설정은 카테고리 관리와 테이블별 QR 발급을 포함한다", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/202608140002_admin_setup.sql", import.meta.url), "utf8");
+  assert.match(sql, /create table if not exists public\.menu_categories/i);
+  assert.match(sql, /function public\.configure_festival_tables/i);
+  assert.match(sql, /function public\.rotate_festival_table_qr/i);
+  assert.match(sql, /qr_token = v_token/i);
+});
+
+test("완료 작업은 테이블 제공과 포장 수령을 구분하고 취소 전 확인한다", async () => {
+  const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /DINE_IN[^\n]+제공 완료[^\n]+수령 완료/);
+  assert.match(dashboard, /window\.confirm/);
+});

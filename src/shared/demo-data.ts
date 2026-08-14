@@ -22,3 +22,20 @@ export const DEMO_ORDERS: DemoOrder[] = [
   { id: "o-49", orderNumber: "A049", fulfillmentType: "DINE_IN", tableNumber: 3, items: [{ name: "치즈 떡볶이", quantity: 1 }, { name: "잔치 국수", quantity: 1 }], totalAmount: 14000, orderStatus: "COOKING", paymentStatus: "CONFIRMED", orderedAt: "8분 전" },
   { id: "o-47", orderNumber: "P047", fulfillmentType: "TAKEOUT", tableNumber: null, items: [{ name: "화끈 제육볶음", quantity: 1 }], totalAmount: 12000, orderStatus: "READY", paymentStatus: "CONFIRMED", orderedAt: "12분 전" },
 ];
+
+export interface FestivalTable {
+  id: string;
+  tableNumber: number;
+  qrToken: string;
+  isActive: boolean;
+}
+
+export const DEMO_TABLES: FestivalTable[] = Array.from({ length: 12 }, (_, index) => {
+  const tableNumber = index + 1;
+  return {
+    id: `00000000-0000-4000-8000-${String(tableNumber).padStart(12, "0")}`,
+    tableNumber,
+    qrToken: tableNumber === 7 ? "table-7-demo" : `demo-table-${tableNumber}-qr-token`,
+    isActive: true,
+  };
+});

@@ -4,10 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronRight, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, X } from "lucide-react";
 import { DEMO_MENU } from "@/src/shared/demo-data";
-import { formatWon, isOrderable, type MenuCategory, type MenuItem } from "@/src/features/menu/domain/menu";
+import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
 import type { FulfillmentType } from "@/src/features/orders/domain/order";
-
-const CATEGORIES: Array<"전체" | MenuCategory> = ["전체", "안주", "식사", "간식", "음료"];
 
 interface CustomerOrderProps {
   initialFulfillment: FulfillmentType;
@@ -21,7 +19,7 @@ interface CreatedOrder { orderNumber: string; publicToken: string | null }
 
 export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuItems = DEMO_MENU, demoMode = false }: CustomerOrderProps) {
   const [fulfillment, setFulfillment] = useState<FulfillmentType>(initialFulfillment);
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("전체");
+  const [category, setCategory] = useState("전체");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [cartOpen, setCartOpen] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
@@ -30,6 +28,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
+  const categories = ["전체", ...Array.from(new Set(menuItems.map((item) => item.category)))];
   const visibleMenu = menuItems.filter((item) => category === "전체" || item.category === category);
   const cartItems = menuItems.filter((item) => cart[item.id]).map((item) => ({ ...item, quantity: cart[item.id] }));
   const totalQuantity = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
@@ -101,9 +100,10 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
           <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요.</p>
         </section>
         <div className="status-progress-card">
-          <div className={`progress-step ${transferClaimed ? "done" : "active"}`}><span>{transferClaimed ? <Check size={16} /> : "1"}</span><div><strong>{transferClaimed ? "입금 확인 요청 완료" : "입금 대기"}</strong><small>{transferClaimed ? "운영자가 확인하고 있어요" : "계좌이체 후 알려주세요"}</small></div></div>
-          <i /><div className="progress-step"><span>2</span><div><strong>조리 중</strong><small>맛있게 준비할게요</small></div></div>
-          <i /><div className="progress-step"><span>3</span><div><strong>준비 완료</strong><small>{fulfillment === "TAKEOUT" ? "부스에서 번호를 보여주세요" : "테이블로 가져다드려요"}</small></div></div>
+          <div className="progress-step done"><span><Check size={16} /></span><div><strong>주문 확인</strong><small>주문번호가 발급됐어요</small></div></div>
+          <i /><div className={`progress-step ${transferClaimed ? "active" : ""}`}><span>2</span><div><strong>{transferClaimed ? "입금 확인 중" : "입금 대기"}</strong><small>{transferClaimed ? "운영자가 확인하고 있어요" : "계좌이체 후 알려주세요"}</small></div></div>
+          <i /><div className="progress-step"><span>3</span><div><strong>주문 승인 · 조리</strong><small>승인 후 바로 준비할게요</small></div></div>
+          <i /><div className="progress-step"><span>4</span><div><strong>조리 완료</strong><small>{fulfillment === "TAKEOUT" ? "부스에서 번호를 보여주세요" : "테이블로 가져다드려요"}</small></div></div>
         </div>
         {createdOrder?.publicToken && <Link className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></Link>}
         <div className="sticky-order-action">
@@ -128,7 +128,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
       </header>
 
       <section className="menu-intro"><p>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장 주문"}</p><h1>오늘 뭐 먹을까요?</h1><span>축제의 밤을 더 맛있게 즐겨보세요.</span></section>
-      <div className="category-tabs" role="tablist" aria-label="메뉴 분류">{CATEGORIES.map((item) => <button type="button" role="tab" aria-selected={category === item} className={category === item ? "active" : ""} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div>
+      <div className="category-tabs" role="tablist" aria-label="메뉴 분류">{categories.map((item) => <button type="button" role="tab" aria-selected={category === item} className={category === item ? "active" : ""} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div>
 
       <section className="menu-grid" aria-label="메뉴 목록">
         {visibleMenu.map((item) => {
