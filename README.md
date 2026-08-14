@@ -24,11 +24,11 @@ npm run dev
 
 1. Supabase 프로젝트에서 `supabase/migrations/202608140001_festival_qr.sql`을 적용합니다.
 2. 필요하면 `supabase/seed.sql`로 예시 테이블과 메뉴를 추가합니다.
-3. `.env.example`을 참고해 URL, anon key, 서버 전용 service-role key를 설정합니다.
+3. `.env.example`을 참고해 프로젝트 URL과 publishable key를 설정합니다.
 4. `FESTIVAL_DEMO_MODE=false`로 변경합니다.
 5. Supabase Auth에 운영자 계정을 만들고 같은 사용자 ID를 `profiles`에 `ADMIN` 또는 `STAFF` 역할로 등록합니다.
 
-service-role key는 서버 Route Handler에서만 사용합니다. 브라우저 번들, Git, 공개 로그에 넣지 마세요.
+publishable key는 RLS와 함수 권한으로 보호되는 공개 클라이언트용 키입니다. secret/service-role key는 이 앱에 저장하지 않습니다.
 
 ## 데이터 무결성
 

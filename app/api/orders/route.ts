@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { createOrderSchema } from "@/src/features/orders/presentation/schemas";
-import { getServiceSupabase } from "@/src/lib/supabase/server";
+import { getPublicSupabase } from "@/src/lib/supabase/server";
 
 export async function POST(request: Request) {
   const payload: unknown = await request.json().catch(() => null);
   const parsed = createOrderSchema.safeParse(payload);
   if (!parsed.success) return NextResponse.json({ code: "INVALID_ORDER", message: "주문 내용을 다시 확인해 주세요." }, { status: 400 });
 
-  const supabase = getServiceSupabase();
+  const supabase = getPublicSupabase();
   if (!supabase) return NextResponse.json({ code: "SERVICE_NOT_CONFIGURED", message: "주문 서비스가 아직 연결되지 않았습니다." }, { status: 503 });
 
   const { data, error } = await supabase.rpc("create_festival_order", {

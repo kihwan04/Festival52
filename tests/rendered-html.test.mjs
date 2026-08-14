@@ -37,3 +37,16 @@ test("관리자 설정에서 메뉴와 테이블 QR 관리를 제공한다", asy
   assert.match(html, /테이블·QR/);
   assert.match(html, /주문 관리/);
 });
+
+test("운영 모드의 관리자 로그인에서 첫 관리자 생성을 제공한다", async () => {
+  process.env.FESTIVAL_DEMO_MODE = "false";
+  try {
+    const response = await render("/admin");
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /처음 연결인가요/);
+    assert.match(html, /관리자 만들기/);
+  } finally {
+    process.env.FESTIVAL_DEMO_MODE = "true";
+  }
+});

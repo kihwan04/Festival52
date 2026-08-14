@@ -99,6 +99,12 @@ create index if not exists orders_status_created_at_idx on public.orders(status,
 create index if not exists orders_table_id_idx on public.orders(table_id);
 create index if not exists order_items_order_id_idx on public.order_items(order_id);
 create index if not exists inventory_adjustments_menu_idx on public.inventory_adjustments(menu_item_id, created_at desc);
+create index if not exists order_items_menu_item_id_idx on public.order_items(menu_item_id);
+create index if not exists inventory_adjustments_order_id_idx on public.inventory_adjustments(order_id) where order_id is not null;
+create index if not exists audit_logs_entity_idx on public.audit_logs(entity_type, entity_id, created_at desc);
+create index if not exists audit_logs_actor_id_idx on public.audit_logs(actor_id) where actor_id is not null;
+create index if not exists inventory_adjustments_admin_id_idx on public.inventory_adjustments(admin_id) where admin_id is not null;
+create index if not exists payments_confirmed_by_idx on public.payments(confirmed_by) where confirmed_by is not null;
 
 alter table public.profiles enable row level security;
 alter table public.festival_tables enable row level security;
@@ -290,14 +296,27 @@ begin
   return v_stock;
 end; $$;
 
-revoke all on function public.create_festival_order(text, text, uuid, jsonb) from public;
-revoke all on function public.mark_transfer_claimed(uuid) from public;
-revoke all on function public.get_public_order(uuid) from public;
+revoke all on public.profiles, public.festival_tables, public.menu_items, public.orders, public.order_items, public.payments, public.inventory_adjustments, public.audit_logs from anon, authenticated;
+grant usage on schema public to anon, authenticated;
+grant select on public.profiles to authenticated;
+grant select on public.festival_tables to authenticated;
+grant select, insert, update on public.menu_items to authenticated;
+grant select on public.orders, public.order_items, public.payments, public.inventory_adjustments, public.audit_logs to authenticated;
+
+revoke all on function public.is_festival_admin() from public, anon, authenticated;
+revoke all on function public.resolve_festival_table(text) from public, anon, authenticated;
+revoke all on function public.get_public_menu() from public, anon, authenticated;
+revoke all on function public.create_festival_order(text, text, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.mark_transfer_claimed(uuid) from public, anon, authenticated;
+revoke all on function public.get_public_order(uuid) from public, anon, authenticated;
+revoke all on function public.admin_process_order(uuid, text) from public, anon, authenticated;
+revoke all on function public.adjust_menu_stock(uuid, integer, text) from public, anon, authenticated;
+grant execute on function public.is_festival_admin() to authenticated;
 grant execute on function public.resolve_festival_table(text) to anon, authenticated;
 grant execute on function public.get_public_menu() to anon, authenticated;
-grant execute on function public.create_festival_order(text, text, uuid, jsonb) to service_role;
-grant execute on function public.mark_transfer_claimed(uuid) to service_role;
-grant execute on function public.get_public_order(uuid) to anon, authenticated, service_role;
+grant execute on function public.create_festival_order(text, text, uuid, jsonb) to anon, authenticated;
+grant execute on function public.mark_transfer_claimed(uuid) to anon, authenticated;
+grant execute on function public.get_public_order(uuid) to anon, authenticated;
 grant execute on function public.admin_process_order(uuid, text) to authenticated;
 grant execute on function public.adjust_menu_stock(uuid, integer, text) to authenticated;
 

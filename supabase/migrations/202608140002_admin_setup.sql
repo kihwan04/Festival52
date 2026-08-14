@@ -15,6 +15,8 @@ on conflict (name) do nothing;
 
 alter table public.menu_categories enable row level security;
 
+grant select, insert on public.menu_categories to authenticated;
+
 drop policy if exists "admin manages categories" on public.menu_categories;
 create policy "admin manages categories" on public.menu_categories
 for all to authenticated

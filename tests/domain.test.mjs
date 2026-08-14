@@ -77,3 +77,12 @@ test("완료 작업은 테이블 제공과 포장 수령을 구분하고 취소 
   assert.match(dashboard, /DINE_IN[^\n]+제공 완료[^\n]+수령 완료/);
   assert.match(dashboard, /window\.confirm/);
 });
+
+test("Supabase 공개·관리자 권한을 분리하고 첫 관리자 생성을 한 번으로 제한한다", async () => {
+  const hardening = await readFile(new URL("../supabase/migrations/202608140003_security_hardening.sql", import.meta.url), "utf8");
+  const bootstrap = await readFile(new URL("../supabase/migrations/202608140004_admin_bootstrap.sql", import.meta.url), "utf8");
+  assert.match(hardening, /revoke execute on all functions in schema public from public, anon, authenticated/i);
+  assert.match(hardening, /grant execute on function public\.admin_process_order\(uuid, text\) to authenticated/i);
+  assert.match(bootstrap, /lock table public\.profiles in exclusive mode/i);
+  assert.match(bootstrap, /not exists\(select 1 from public\.profiles\)/i);
+});
