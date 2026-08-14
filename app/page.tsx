@@ -9,7 +9,7 @@ export default function Home() {
       <nav className="landing-nav" aria-label="주요 메뉴">
         <Link className="brand" href="/">
           <span className="brand-mark">52</span>
-          <span><strong>야장</strong><small>FESTIVAL KITCHEN</small></span>
+          <span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span>
         </Link>
         <Link className="nav-admin" href="/admin">운영자 화면 <ArrowRight size={16} /></Link>
       </nav>
@@ -34,7 +34,7 @@ export default function Home() {
         </div>
 
         <div className="hero-ticket" aria-label="주문 과정 안내">
-          <div className="ticket-top"><span>YAJANG 52</span><span>ORDER GUIDE</span></div>
+          <div className="ticket-top"><span>COMGONG 52</span><span>ORDER GUIDE</span></div>
           <div className="ticket-number"># A052</div>
           <div className="ticket-route">
             <div><span>01</span><strong>메뉴 선택</strong><small>먹고 싶은 메뉴 담기</small></div><i />

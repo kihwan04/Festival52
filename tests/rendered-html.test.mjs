@@ -14,7 +14,7 @@ test("축제 주문 시작 화면을 서버 렌더링한다", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /야장 52/);
+  assert.match(html, /컴공 52/);
   assert.match(html, /줄 서지 말고/);
   assert.match(html, /포장 주문/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);

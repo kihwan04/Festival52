@@ -118,7 +118,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
     <main className="customer-shell">
       <header className="customer-header">
         <div className="customer-head-row">
-          <Link className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>야장</strong><small>FESTIVAL KITCHEN</small></span></Link>
+          <Link className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span></Link>
           <span className="open-chip"><i /> 주문 가능</span>
         </div>
         <div className="fulfillment-switch" role="group" aria-label="수령 방법">

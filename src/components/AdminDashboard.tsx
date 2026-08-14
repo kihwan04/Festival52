@@ -85,7 +85,7 @@ export function AdminDashboard({ initialOrders = DEMO_ORDERS, initialMenu = DEMO
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar">
-        <Link className="brand admin-brand" href="/"><span className="brand-mark">52</span><span><strong>야장</strong><small>ADMIN CONSOLE</small></span></Link>
+        <Link className="brand admin-brand" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>ADMIN CONSOLE</small></span></Link>
         <nav aria-label="운영 메뉴">
           <button type="button" className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><ClipboardList size={20} /> 주문 관리 <b>{orders.filter((item) => item.orderStatus !== "SERVED" && item.orderStatus !== "CANCELLED").length}</b></button>
           <button type="button" className={view === "inventory" ? "active" : ""} onClick={() => setView("inventory")}><Package size={20} /> 메뉴·재고 <b className="warn-count">{menu.filter((item) => item.stockQuantity <= 5).length}</b></button>

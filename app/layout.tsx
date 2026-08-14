@@ -15,11 +15,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = `${protocol}://${host}`;
   return {
     metadataBase: new URL(origin),
-    title: { default: "야장 52 | 축제 QR 주문", template: "%s | 야장 52" },
+    title: { default: "컴공 52 | 축제 QR 주문", template: "%s | 컴공 52" },
     description: "테이블과 포장 주문을 빠르고 정확하게 처리하는 축제 QR 주문 시스템",
     icons: { icon: "/og.png", shortcut: "/og.png" },
-    openGraph: { title: "야장 52 · 축제 QR 주문", description: "QR을 찍고, 메뉴를 고르고, 주문 상태까지 한눈에.", type: "website", locale: "ko_KR", images: [{ url: `${origin}/og.png`, width: 1732, height: 909, alt: "야장 52 축제 QR 주문" }] },
-    twitter: { card: "summary_large_image", title: "야장 52 · 축제 QR 주문", description: "줄 서지 말고, 맛있는 축제를 즐겨요.", images: [`${origin}/og.png`] },
+    openGraph: { title: "컴공 52 · 축제 QR 주문", description: "QR을 찍고, 메뉴를 고르고, 주문 상태까지 한눈에.", type: "website", locale: "ko_KR", images: [{ url: `${origin}/og.png`, width: 1732, height: 909, alt: "컴공 52 축제 QR 주문" }] },
+    twitter: { card: "summary_large_image", title: "컴공 52 · 축제 QR 주문", description: "줄 서지 말고, 맛있는 축제를 즐겨요.", images: [`${origin}/og.png`] },
   };
 }
 
