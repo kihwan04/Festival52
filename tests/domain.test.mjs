@@ -202,3 +202,19 @@ test("고객 주문 진입은 운영자가 발급한 테이블·포장 QR로 제
   assert.match(dashboard, /takeout-order-qr\.png/);
   assert.match(dashboard, /포장 주문 QR/);
 });
+
+test("테이블 QR 설정 응답은 서버의 camelCase 형식을 그대로 사용한다", async () => {
+  const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /payload = await response\.json[^\n]+FestivalTable\[\]/);
+  assert.match(dashboard, /setTables\(payload\)/);
+  assert.doesNotMatch(dashboard, /row\.table_number|row\.qr_token|row\.is_active/);
+  assert.match(dashboard, /QR \$\{count\}개 생성·저장/);
+});
+
+test("테이블 QR 토큰은 Supabase 확장 스키마의 난수 함수를 사용한다", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20260816031134_fix_table_qr_generation.sql", import.meta.url), "utf8");
+  assert.match(sql, /extensions\.gen_random_bytes\(24\)/i);
+  assert.match(sql, /configure_festival_tables/i);
+  assert.match(sql, /rotate_festival_table_qr/i);
+  assert.match(sql, /public\.is_festival_admin\(\)/i);
+});

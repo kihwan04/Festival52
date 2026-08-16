@@ -229,15 +229,22 @@ export function AdminDashboard({
     return true;
   };
 
-  const configureTables = async (count: number) => {
+  const configureTables = async (count: number): Promise<boolean> => {
     const currentCount = tables.filter((table) => table.isActive).length;
-    if (count < currentCount && !window.confirm(`${currentCount - count}개 테이블을 비활성화할까요? 기존 주문 기록은 유지됩니다.`)) return;
+    if (count < currentCount && !window.confirm(`${currentCount - count}개 테이블을 비활성화할까요? 기존 주문 기록은 유지됩니다.`)) return false;
     if (!demoMode) {
       const response = await fetch("/api/admin/tables", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ count }) });
-      if (!response.ok) { showNotice("테이블을 설정하지 못했습니다."); return; }
-      const rows = await response.json() as Array<{ id: string; table_number: number; qr_token: string; is_active: boolean }>;
-      setTables(rows.map((row) => ({ id: row.id, tableNumber: row.table_number, qrToken: row.qr_token, isActive: row.is_active })));
-      await refreshSnapshot(true);
+      if (response.status === 401 || response.status === 403) {
+        showNotice("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+        window.setTimeout(() => window.location.assign("/admin"), 900);
+        return false;
+      }
+      const payload = await response.json().catch(() => null) as FestivalTable[] | { message?: string } | null;
+      if (!response.ok || !Array.isArray(payload)) {
+        showNotice(payload && !Array.isArray(payload) ? payload.message ?? "테이블을 설정하지 못했습니다." : "테이블을 설정하지 못했습니다.");
+        return false;
+      }
+      setTables(payload);
     } else {
       setTables((current) => Array.from({ length: Math.max(count, current.length) }, (_, index) => {
         const tableNumber = index + 1;
@@ -251,6 +258,7 @@ export function AdminDashboard({
       }));
     }
     showNotice(`${count}개 테이블의 QR이 준비되었습니다.`);
+    return true;
   };
 
   const rotateTableQr = async (table: FestivalTable) => {
@@ -489,13 +497,20 @@ function MenuEditor({ item, categories, onClose, onSave }: { item: MenuItem | nu
   </form></div>;
 }
 
-function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]; onConfigure: (count: number) => void; onRotate: (table: FestivalTable) => void }) {
+function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]; onConfigure: (count: number) => Promise<boolean>; onRotate: (table: FestivalTable) => void }) {
   const activeTables = tables.filter((table) => table.isActive).sort((a, b) => a.tableNumber - b.tableNumber);
   const [count, setCount] = useState(activeTables.length || 1);
+  const [saving, setSaving] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    await onConfigure(count);
+    setSaving(false);
+  };
   return <>
     <section className="table-setup-card">
-      <div><span className="setup-icon"><QrCode size={24} /></span><div><h2>테이블 QR 자동 생성</h2><p>테이블 수를 저장하면 1번부터 각각 다른 주문 주소와 QR이 발급됩니다.</p></div></div>
-      <form onSubmit={(event) => { event.preventDefault(); onConfigure(count); }}><label>운영 테이블 수<input type="number" min="1" max="200" value={count} onChange={(event) => setCount(Math.min(200, Math.max(1, Number(event.target.value))))} /></label><button type="submit"><Check size={17} /> 테이블 설정 저장</button></form>
+      <div><span className="setup-icon"><QrCode size={24} /></span><div><h2>테이블 QR 생성</h2><p>테이블 수를 입력하고 생성 버튼을 누르면 1번부터 서로 다른 주문 QR이 발급됩니다. 현재 {activeTables.length}개가 사용 중입니다.</p></div></div>
+      <form onSubmit={submit}><label>운영 테이블 수<input type="number" min="1" max="200" value={count} onChange={(event) => setCount(Math.min(200, Math.max(1, Number(event.target.value))))} /></label><button type="submit" disabled={saving}><Check size={17} /> {saving ? "생성 중…" : `QR ${count}개 생성·저장`}</button></form>
     </section>
     <TakeoutQrCard />
     <div className="table-list-heading"><div><h2>발급된 테이블 QR</h2><p>각 QR은 해당 테이블 번호를 식별합니다. 출력 후 테이블에 부착해 주세요.</p></div><button type="button" onClick={() => window.print()}><QrCode size={16} /> 전체 QR 인쇄</button></div>
@@ -505,13 +520,14 @@ function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]
 
 function TakeoutQrCard() {
   const [qr, setQr] = useState({ orderUrl: "", dataUrl: "" });
+  const [qrError, setQrError] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     const url = `${window.location.origin}/booth`;
     let active = true;
-    void QRCode.toDataURL(url, { width: 420, margin: 1, color: { dark: "#17212b", light: "#ffffff" } }).then((dataUrl) => {
-      if (active) setQr({ orderUrl: url, dataUrl });
-    });
+    void QRCode.toDataURL(url, { width: 420, margin: 1, color: { dark: "#17212b", light: "#ffffff" } })
+      .then((dataUrl) => { if (active) setQr({ orderUrl: url, dataUrl }); })
+      .catch(() => { if (active) setQrError(true); });
     return () => { active = false; };
   }, []);
   const copyLink = async () => {
@@ -527,23 +543,24 @@ function TakeoutQrCard() {
         <div className="takeout-qr-actions"><button type="button" onClick={() => void copyLink()}><Copy size={15} /> {copied ? "복사 완료" : "주문 링크 복사"}</button>{qr.dataUrl && <a href={qr.dataUrl} download="takeout-order-qr.png"><QrCode size={15} /> QR 이미지 저장</a>}</div>
       </div>
     </div>
-    <div className="takeout-qr-image">{qr.dataUrl ? <Image src={qr.dataUrl} width={420} height={420} unoptimized alt="포장 주문 QR" /> : <QrCode size={82} />}</div>
+    <div className="takeout-qr-image">{qrError ? <span className="qr-error"><AlertTriangle size={20} />QR 생성 실패</span> : qr.dataUrl ? <Image src={qr.dataUrl} width={420} height={420} unoptimized alt="포장 주문 QR" /> : <QrCode size={82} />}</div>
   </section>;
 }
 
 function TableQrCard({ table, onRotate }: { table: FestivalTable; onRotate: (table: FestivalTable) => void }) {
   const [qr, setQr] = useState({ orderUrl: "", dataUrl: "" });
+  const [qrError, setQrError] = useState(false);
   useEffect(() => {
     const url = `${window.location.origin}/t/${encodeURIComponent(table.qrToken)}`;
     let active = true;
-    void QRCode.toDataURL(url, { width: 360, margin: 1, color: { dark: "#17212b", light: "#ffffff" } }).then((dataUrl) => {
-      if (active) setQr({ orderUrl: url, dataUrl });
-    });
+    void QRCode.toDataURL(url, { width: 360, margin: 1, color: { dark: "#17212b", light: "#ffffff" } })
+      .then((dataUrl) => { if (active) setQr({ orderUrl: url, dataUrl }); })
+      .catch(() => { if (active) setQrError(true); });
     return () => { active = false; };
   }, [table.qrToken]);
   return <article className="table-qr-card">
     <div className="qr-card-head"><div><small>TABLE</small><strong>{table.tableNumber}</strong></div><span><i /> 사용 중</span></div>
-    <div className="qr-image">{qr.dataUrl ? <Image src={qr.dataUrl} width={360} height={360} unoptimized alt={`${table.tableNumber}번 테이블 주문 QR`} /> : <QrCode size={78} />}</div>
+    <div className="qr-image">{qrError ? <span className="qr-error"><AlertTriangle size={18} />QR 생성 실패</span> : qr.dataUrl ? <Image src={qr.dataUrl} width={360} height={360} unoptimized alt={`${table.tableNumber}번 테이블 주문 QR`} /> : <QrCode size={78} />}</div>
     <p>{table.tableNumber}번 테이블 주문</p><small className="qr-token">{table.qrToken}</small>
     <div className="qr-actions"><button type="button" onClick={() => navigator.clipboard.writeText(qr.orderUrl)}><Copy size={14} /> 링크 복사</button>{qr.dataUrl && <a href={qr.dataUrl} download={`table-${table.tableNumber}-qr.png`}><QrCode size={14} /> 저장</a>}<button type="button" onClick={() => onRotate(table)} aria-label={`${table.tableNumber}번 QR 재발급`}><RotateCw size={14} /></button></div>
   </article>;
