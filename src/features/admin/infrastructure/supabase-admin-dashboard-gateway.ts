@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AdminDashboardGateway } from "@/src/features/admin/application/admin-dashboard-service";
-import type { AdminSnapshot, SalesSummary } from "@/src/features/admin/domain/admin-snapshot";
+import { combineDailySales, type AdminSnapshot, type DailySalesSummary } from "@/src/features/admin/domain/admin-snapshot";
 import type { MenuCategory, MenuItem, MenuStatus } from "@/src/features/menu/domain/menu";
 import type { FulfillmentType, OrderStatus, PaymentStatus } from "@/src/features/orders/domain/order";
 import { SupabaseStoreSettingsGateway } from "@/src/features/settings/infrastructure/supabase-store-settings-gateway";
@@ -16,7 +16,14 @@ interface DbOrder {
 interface DbMenu { id: string; name: string; description: string; price: number; category: string; status: MenuStatus; stock_quantity: number }
 interface DbTable { id: string; table_number: number; qr_token: string; is_active: boolean }
 interface DbOrderItemStat { menu_item_id: string; quantity: number; orders: { status: OrderStatus } | Array<{ status: OrderStatus }> }
-interface DbSale { total_amount: number; fulfillment_type: FulfillmentType; status: OrderStatus; payments: { status: PaymentStatus } | Array<{ status: PaymentStatus }> }
+interface DbDailySale {
+  sales_date: string;
+  total_revenue: number | string;
+  confirmed_orders: number | string;
+  dine_in_orders: number | string;
+  takeout_orders: number | string;
+  average_order_amount: number | string;
+}
 
 export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
   constructor(private readonly client: SupabaseClient) {}
@@ -28,19 +35,21 @@ export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
       this.client.from("order_items").select("menu_item_id,quantity,orders(status)"),
       this.client.from("festival_tables").select("id,table_number,qr_token,is_active").order("table_number"),
       this.client.from("menu_categories").select("name").order("sort_order").order("name"),
-      this.client.from("orders").select("total_amount,fulfillment_type,status,payments(status)").neq("status", "CANCELLED"),
+      this.client.rpc("get_admin_sales_by_day"),
       new SupabaseStoreSettingsGateway(this.client).getAdmin(),
     ]);
     const error = ordersResult.error ?? menuResult.error ?? itemStatsResult.error ?? tableResult.error ?? categoryResult.error ?? salesResult.error;
     if (error) throw conflict("운영 현황을 불러오지 못했습니다.");
     const inventoryStats = buildInventoryStats((itemStatsResult.data ?? []) as unknown as DbOrderItemStat[]);
+    const dailySales = ((salesResult.data ?? []) as unknown as DbDailySale[]).map(mapDailySale);
     return {
       orders: ((ordersResult.data ?? []) as unknown as DbOrder[]).map(mapOrder),
       menu: ((menuResult.data ?? []) as unknown as DbMenu[]).map((item) => mapMenu(item, inventoryStats.get(item.id))),
       tables: ((tableResult.data ?? []) as DbTable[]).map(mapTable),
       categories: ((categoryResult.data ?? []) as Array<{ name: string }>).map((item) => item.name),
       settings,
-      sales: buildSales((salesResult.data ?? []) as unknown as DbSale[]),
+      sales: combineDailySales(dailySales),
+      dailySales,
       syncedAt: new Date().toISOString(),
     };
   }
@@ -79,14 +88,13 @@ function mapMenu(row: DbMenu, stats?: { reserved: number; sold: number }): MenuI
 
 function mapTable(row: DbTable): FestivalTable { return { id: row.id, tableNumber: row.table_number, qrToken: row.qr_token, isActive: row.is_active } }
 
-function buildSales(rows: DbSale[]): SalesSummary {
-  const confirmed = rows.filter((row) => firstRelation(row.payments)?.status === "CONFIRMED");
-  const totalRevenue = confirmed.reduce((sum, row) => sum + row.total_amount, 0);
+function mapDailySale(row: DbDailySale): DailySalesSummary {
   return {
-    totalRevenue,
-    confirmedOrders: confirmed.length,
-    dineInOrders: confirmed.filter((row) => row.fulfillment_type === "DINE_IN").length,
-    takeoutOrders: confirmed.filter((row) => row.fulfillment_type === "TAKEOUT").length,
-    averageOrderAmount: confirmed.length ? Math.round(totalRevenue / confirmed.length) : 0,
+    date: row.sales_date,
+    totalRevenue: Number(row.total_revenue),
+    confirmedOrders: Number(row.confirmed_orders),
+    dineInOrders: Number(row.dine_in_orders),
+    takeoutOrders: Number(row.takeout_orders),
+    averageOrderAmount: Number(row.average_order_amount),
   };
 }

@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { AlertTriangle, Archive, BarChart3, Bell, Check, ChefHat, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, Minus, Package, Pencil, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, ChevronLeft, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, Minus, Package, Pencil, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
 import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
-import type { AdminSnapshot, SalesSummary } from "@/src/features/admin/domain/admin-snapshot";
+import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type SalesSummary } from "@/src/features/admin/domain/admin-snapshot";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
@@ -32,6 +32,8 @@ const DEMO_SALES: SalesSummary = {
   averageOrderAmount: 15333,
 };
 
+const DEMO_DAILY_SALES: DailySalesSummary[] = [{ date: getSeoulDateKey(), ...DEMO_SALES }];
+
 const DEMO_SNAPSHOT: AdminSnapshot = {
   orders: DEMO_ORDERS,
   menu: DEMO_MENU,
@@ -39,6 +41,7 @@ const DEMO_SNAPSHOT: AdminSnapshot = {
   categories: ["안주", "식사", "간식", "음료"],
   settings: DEMO_STORE_SETTINGS,
   sales: DEMO_SALES,
+  dailySales: DEMO_DAILY_SALES,
   syncedAt: new Date().toISOString(),
 };
 
@@ -54,6 +57,7 @@ export function AdminDashboard({
   const [categories, setCategories] = useState<string[]>(initialSnapshot.categories);
   const [settings, setSettings] = useState<StoreSettings>(initialSnapshot.settings);
   const [sales, setSales] = useState<SalesSummary>(initialSnapshot.sales);
+  const [dailySales, setDailySales] = useState<DailySalesSummary[]>(initialSnapshot.dailySales ?? []);
   const [syncedAt, setSyncedAt] = useState(initialSnapshot.syncedAt);
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
@@ -66,6 +70,7 @@ export function AdminDashboard({
     setCategories(snapshot.categories);
     setSettings(snapshot.settings);
     setSales(snapshot.sales);
+    setDailySales(snapshot.dailySales ?? []);
     setSyncedAt(snapshot.syncedAt);
   }, []);
 
@@ -339,17 +344,37 @@ export function AdminDashboard({
           <section className="orders-grid" aria-label="주문 목록">
             {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>해당 주문을 모두 처리했어요</strong><span>새 주문이 들어오면 자동으로 표시됩니다.</span></div> : visibleOrders.map((order) => <OrderCard order={order} onAdvance={advance} onCancel={cancel} key={order.id} />)}
           </section>
-        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView sales={sales} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
+        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
       {notice && <div className="admin-toast"><Check size={17} /> {notice}</div>}
     </main>
   );
 }
 
-function SalesView({ sales }: { sales: SalesSummary }) {
+function SalesView({ totalSales, dailySales }: { totalSales: SalesSummary; dailySales: DailySalesSummary[] }) {
+  const today = getSeoulDateKey();
+  const [selectedDate, setSelectedDate] = useState(today);
+  const sales = dailySales.find((item) => item.date === selectedDate) ?? emptySalesSummary();
+  const selectedDateLabel = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(new Date(`${selectedDate}T00:00:00+09:00`));
+
   return <section className="sales-view">
+    <div className="sales-date-toolbar">
+      <div className="sales-date-heading"><span><CalendarDays size={18} /></span><div><small>조회 날짜</small><strong>{selectedDateLabel}</strong></div></div>
+      <div className="sales-date-controls">
+        <button type="button" aria-label="이전 날짜" onClick={() => setSelectedDate((date) => shiftDateKey(date, -1))}><ChevronLeft size={18} /></button>
+        <input type="date" aria-label="매출 조회 날짜" max={today} value={selectedDate} onChange={(event) => event.target.value && setSelectedDate(event.target.value)} />
+        <button type="button" aria-label="다음 날짜" disabled={selectedDate >= today} onClick={() => setSelectedDate((date) => shiftDateKey(date, 1))}><ChevronRight size={18} /></button>
+        <button type="button" className="today-button" disabled={selectedDate === today} onClick={() => setSelectedDate(today)}>오늘</button>
+      </div>
+    </div>
     <div className="sales-hero">
-      <div><small>CONFIRMED REVENUE</small><h2>{formatWon(sales.totalRevenue)}</h2><p>관리자가 입금을 확인한 주문만 매출에 포함됩니다.</p></div>
+      <div><small>DAILY CONFIRMED REVENUE</small><h2>{formatWon(sales.totalRevenue)}</h2><p>{selectedDateLabel} · 관리자가 입금을 확인한 시각을 기준으로 집계합니다.</p></div>
       <BarChart3 size={42} />
     </div>
     <div className="sales-summary-grid">
@@ -358,6 +383,7 @@ function SalesView({ sales }: { sales: SalesSummary }) {
       <article><small>테이블 주문</small><strong>{sales.dineInOrders}<em>건</em></strong></article>
       <article><small>포장 주문</small><strong>{sales.takeoutOrders}<em>건</em></strong></article>
     </div>
+    <div className="sales-total-line"><span>전체 누적 확정 매출</span><strong>{formatWon(totalSales.totalRevenue)}</strong><em>{totalSales.confirmedOrders}건</em></div>
     <div className="sales-note"><WalletCards size={19} /><div><strong>현금·계좌이체 운영 기준</strong><p>고객의 “송금 완료” 표시만으로는 매출이 잡히지 않습니다. 실제 입금을 확인한 뒤 주문 관리에서 입금 확인을 눌러 주세요.</p></div></div>
   </section>;
 }

@@ -12,6 +12,7 @@ import {
   validateFulfillment,
 } from "../src/features/orders/domain/order.ts";
 import { isStoreConfigured } from "../src/features/settings/domain/store-settings.ts";
+import { combineDailySales, getSeoulDateKey, shiftDateKey } from "../src/features/admin/domain/admin-snapshot.ts";
 
 const menu = [
   { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3 },
@@ -169,4 +170,25 @@ test("주요 화면 이동은 배포 환경에서도 동작하는 기본 링크�
     const source = await readFile(new URL(file, import.meta.url), "utf8");
     assert.doesNotMatch(source, /next\/link|<Link/);
   }
+});
+
+test("매출 날짜는 서울 시간으로 계산하고 날짜 이동을 지원한다", () => {
+  assert.equal(getSeoulDateKey("2026-08-15T14:59:59.000Z"), "2026-08-15");
+  assert.equal(getSeoulDateKey("2026-08-15T15:00:00.000Z"), "2026-08-16");
+  assert.equal(shiftDateKey("2026-08-01", -1), "2026-07-31");
+  assert.equal(shiftDateKey("2026-12-31", 1), "2027-01-01");
+});
+
+test("일별 매출 합계로 전체 누적 매출을 정확히 계산한다", () => {
+  assert.deepEqual(combineDailySales([
+    { date: "2026-08-15", totalRevenue: 30000, confirmedOrders: 2, dineInOrders: 1, takeoutOrders: 1, averageOrderAmount: 15000 },
+    { date: "2026-08-16", totalRevenue: 10000, confirmedOrders: 1, dineInOrders: 1, takeoutOrders: 0, averageOrderAmount: 10000 },
+  ]), { totalRevenue: 40000, confirmedOrders: 3, dineInOrders: 2, takeoutOrders: 1, averageOrderAmount: 13333 });
+});
+
+test("관리자 일별 매출 집계는 서울 날짜와 확정 결제만 사용한다", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/202608160001_admin_daily_sales.sql", import.meta.url), "utf8");
+  assert.match(sql, /confirmed_at at time zone 'Asia\/Seoul'/i);
+  assert.match(sql, /p\.status = 'CONFIRMED'/i);
+  assert.match(sql, /security invoker/i);
 });
