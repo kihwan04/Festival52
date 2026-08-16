@@ -157,3 +157,16 @@ test("관리자 세션은 갱신 토큰을 보관하고 만료 전에 연장한�
   assert.match(session, /refreshSession\(\{ refresh_token: refreshToken \}\)/);
   assert.match(session, /auth\.getUser\(accessToken\)/);
 });
+
+test("주요 화면 이동은 배포 환경에서도 동작하는 기본 링크를 사용한다", async () => {
+  const files = [
+    "../app/page.tsx",
+    "../src/components/CustomerOrder.tsx",
+    "../src/components/AdminLogin.tsx",
+    "../src/components/AdminDashboard.tsx",
+  ];
+  for (const file of files) {
+    const source = await readFile(new URL(file, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /next\/link|<Link/);
+  }
+});

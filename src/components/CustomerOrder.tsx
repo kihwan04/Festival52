@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Link from "next/link";
 import { ArrowLeft, Check, ChefHat, ChevronRight, Copy, PackageCheck, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU } from "@/src/shared/demo-data";
 import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
@@ -128,7 +127,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
     return (
       <main className="customer-shell status-shell">
         <header className="customer-topbar">
-          <Link className="round-button" href="/" aria-label="처음으로"><ArrowLeft size={20} /></Link>
+          <a className="round-button" href="/" aria-label="처음으로"><ArrowLeft size={20} /></a>
           <span className="topbar-title">주문 현황</span><span className="topbar-spacer" />
         </header>
         <section className="order-success" aria-live="polite">
@@ -150,7 +149,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
           <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요.</p>
         </section>}
         {displayOrder && <LiveOrderProgress order={displayOrder} />}
-        {createdOrder?.publicToken && <Link className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></Link>}
+        {createdOrder?.publicToken && <a className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></a>}
         {awaitingPayment && <div className="sticky-order-action">
           <button className="checkout-button" type="button" disabled={paymentClaimed || transferSubmitting} onClick={claimTransfer}>{paymentClaimed ? <><Check size={20} /> 입금 확인을 요청했어요</> : transferSubmitting ? "확인 요청 보내는 중…" : "입금했어요"}</button>
           {transferError ? <small className="transfer-action-error" role="alert">{transferError}</small> : <small>이 버튼은 입금 완료가 아닌 확인 요청이에요.</small>}
@@ -163,7 +162,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
     <main className="customer-shell">
       <header className="customer-header">
         <div className="customer-head-row">
-          <Link className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span></Link>
+          <a className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span></a>
           <span className={`open-chip ${acceptingOrders ? "" : "closed"}`}><i /> {acceptingOrders ? "주문 가능" : "주문 준비 중"}</span>
         </div>
         <div className="fulfillment-switch" role="group" aria-label="수령 방법">

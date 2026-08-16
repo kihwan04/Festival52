@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import Link from "next/link";
 import Image from "next/image";
 import QRCode from "qrcode";
 import { AlertTriangle, Archive, BarChart3, Bell, Check, ChefHat, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, Minus, Package, Pencil, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
@@ -305,7 +304,7 @@ export function AdminDashboard({
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar">
-        <Link className="brand admin-brand" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>ADMIN CONSOLE</small></span></Link>
+        <a className="brand admin-brand" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>ADMIN CONSOLE</small></span></a>
         <nav aria-label="운영 메뉴">
           <button type="button" className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><ClipboardList size={20} /> 주문 관리 <b>{orders.filter((item) => item.orderStatus !== "SERVED" && item.orderStatus !== "CANCELLED").length}</b></button>
           <button type="button" className={view === "inventory" ? "active" : ""} onClick={() => setView("inventory")}><Package size={20} /> 메뉴·재고 <b className="warn-count">{menu.filter((item) => item.stockQuantity <= 5 && item.status !== "ARCHIVED").length}</b></button>

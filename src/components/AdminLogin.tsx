@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
 
 export function AdminLogin() {
@@ -29,7 +28,7 @@ export function AdminLogin() {
   };
 
   return <main className="admin-login-shell"><section className="admin-login-card">
-    <Link className="login-back" href="/"><ArrowLeft size={17} /> 고객 화면</Link>
+    <a className="login-back" href="/"><ArrowLeft size={17} /> 고객 화면</a>
     <div className="login-lock"><LockKeyhole size={27} /></div><p className="login-kicker">{setupMode ? "FIRST ADMIN" : "STAFF ONLY"}</p><h1>{setupMode ? "첫 관리자 만들기" : "운영자 로그인"}</h1><p className="login-copy">{setupMode ? "첫 연결에서 한 번만 사용할 수 있습니다. 이후에는 등록된 운영자만 로그인할 수 있어요." : "주문·입금·재고 정보는 등록된 운영자만 확인할 수 있어요."}</p>
     <form onSubmit={submit}>{setupMode && <label>표시 이름<input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="축제 관리자" autoComplete="name" /></label>}<label>이메일<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@example.com" autoComplete="username" /></label><label>비밀번호<input required type="password" minLength={setupMode ? 10 : 8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={setupMode ? "10자 이상 입력" : "비밀번호 입력"} autoComplete={setupMode ? "new-password" : "current-password"} /></label>{error && <p className="login-error">{error}</p>}<button type="submit" disabled={loading}>{loading ? "확인 중…" : setupMode ? "관리자 계정 만들기" : "안전하게 로그인"}</button></form>
     <button className="login-mode-toggle" type="button" onClick={() => { setSetupMode((current) => !current); setError(null); }}>{setupMode ? "이미 계정이 있어요 · 로그인" : "처음 연결인가요? · 관리자 만들기"}</button>

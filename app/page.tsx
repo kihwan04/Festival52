@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ArrowRight, ChefHat, QrCode, ShieldCheck, UtensilsCrossed } from "lucide-react";
 import { loadPublicStoreSettings } from "@/src/features/settings/infrastructure/public-store-settings";
 import { isDemoMode } from "@/src/lib/supabase/server";
@@ -12,11 +11,11 @@ export default async function Home() {
   return (
     <main className="landing-shell">
       <nav className="landing-nav" aria-label="주요 메뉴">
-        <Link className="brand" href="/">
+        <a className="brand" href="/">
           <span className="brand-mark">52</span>
           <span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span>
-        </Link>
-        <Link className="nav-admin" href="/admin">운영자 화면 <ArrowRight size={16} /></Link>
+        </a>
+        <a className="nav-admin" href="/admin">운영자 화면 <ArrowRight size={16} /></a>
       </nav>
 
       <section className="hero-section">
@@ -25,12 +24,12 @@ export default async function Home() {
           <h1>줄 서지 말고,<br /><em>맛있는 축제</em>를 즐겨요.</h1>
           <p>QR로 메뉴를 고르고 계좌이체 후 알려주세요.<br />입금 확인부터 조리 완료까지 실시간으로 안내해 드려요.</p>
           <div className="hero-actions">
-            <Link className="primary-link" href={demoMode ? "/t/table-7-demo" : "/booth"}>
+            <a className="primary-link" href={demoMode ? "/t/table-7-demo" : "/booth"}>
               <QrCode size={20} /> {demoMode ? "7번 테이블 체험하기" : "포장 주문 시작하기"} <ArrowRight size={18} />
-            </Link>
-            <Link className="secondary-link" href={demoMode ? "/booth" : "/admin"}>
+            </a>
+            <a className="secondary-link" href={demoMode ? "/booth" : "/admin"}>
               <UtensilsCrossed size={19} /> {demoMode ? "포장 주문 체험하기" : "운영자 로그인"}
-            </Link>
+            </a>
           </div>
           <div className="trust-row">
             <span><ShieldCheck size={17} /> 안전한 주문</span>
