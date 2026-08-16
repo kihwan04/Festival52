@@ -10,13 +10,14 @@ async function render(path = "/") {
   return worker.fetch(new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("축제 주문 시작 화면을 서버 렌더링한다", async () => {
+test("메인 화면은 운영자 로그인 전용으로 렌더링한다", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /컴공 52/);
-  assert.match(html, /줄 서지 말고/);
-  assert.match(html, /포장 주문/);
+  assert.match(html, /주문은 QR로/);
+  assert.match(html, /운영자 로그인/);
+  assert.doesNotMatch(html, /포장 주문 시작하기|테이블 체험하기|포장 주문 체험하기/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);
 });
 

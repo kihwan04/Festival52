@@ -1,11 +1,9 @@
-import { ArrowRight, ChefHat, QrCode, ShieldCheck, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, BarChart3, LogIn, QrCode, ShieldCheck } from "lucide-react";
 import { loadPublicStoreSettings } from "@/src/features/settings/infrastructure/public-store-settings";
-import { isDemoMode } from "@/src/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const demoMode = isDemoMode();
   const settings = await loadPublicStoreSettings();
   const acceptingOrders = settings.isOpen && settings.configured;
   return (
@@ -15,38 +13,36 @@ export default async function Home() {
           <span className="brand-mark">52</span>
           <span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span>
         </a>
-        <a className="nav-admin" href="/admin">운영자 화면 <ArrowRight size={16} /></a>
+        <a className="nav-admin" href="/admin">운영자 로그인 <ArrowRight size={16} /></a>
       </nav>
 
       <section className="hero-section">
         <div className="hero-copy">
-          <div className="eyebrow"><span className="live-dot" /> {acceptingOrders ? "지금 주문 가능해요" : "메뉴를 준비하고 있어요"}</div>
-          <h1>줄 서지 말고,<br /><em>맛있는 축제</em>를 즐겨요.</h1>
-          <p>QR로 메뉴를 고르고 계좌이체 후 알려주세요.<br />입금 확인부터 조리 완료까지 실시간으로 안내해 드려요.</p>
-          <div className="hero-actions">
-            <a className="primary-link" href={demoMode ? "/t/table-7-demo" : "/booth"}>
-              <QrCode size={20} /> {demoMode ? "7번 테이블 체험하기" : "포장 주문 시작하기"} <ArrowRight size={18} />
-            </a>
-            <a className="secondary-link" href={demoMode ? "/booth" : "/admin"}>
-              <UtensilsCrossed size={19} /> {demoMode ? "포장 주문 체험하기" : "운영자 로그인"}
+          <div className="eyebrow"><span className="live-dot" /> {acceptingOrders ? "주문 시스템 운영 중" : "운영 준비 상태"}</div>
+          <h1>주문은 QR로,<br /><em>운영은 한곳</em>에서.</h1>
+          <p>로그인 후 테이블·포장 QR을 발급하고<br />주문, 입금 확인, 조리와 매출까지 관리하세요.</p>
+          <div className="hero-actions operator-only-action">
+            <a className="primary-link" href="/admin">
+              <LogIn size={20} /> 운영자 로그인 <ArrowRight size={18} />
             </a>
           </div>
           <div className="trust-row">
-            <span><ShieldCheck size={17} /> 안전한 주문</span>
-            <span><ChefHat size={17} /> 실시간 조리 현황</span>
+            <span><ShieldCheck size={17} /> 관리자 전용</span>
+            <span><QrCode size={17} /> QR 발급·관리</span>
+            <span><BarChart3 size={17} /> 실시간 매출</span>
           </div>
         </div>
 
-        <div className="hero-ticket" aria-label="주문 과정 안내">
-          <div className="ticket-top"><span>COMGONG 52</span><span>ORDER GUIDE</span></div>
-          <div className="ticket-number"># A052</div>
+        <div className="hero-ticket" aria-label="운영 과정 안내">
+          <div className="ticket-top"><span>COMGONG 52</span><span>OPERATION GUIDE</span></div>
+          <div className="ticket-number">ADMIN 52</div>
           <div className="ticket-route">
-            <div><span>01</span><strong>메뉴 선택</strong><small>먹고 싶은 메뉴 담기</small></div><i />
-            <div><span>02</span><strong>계좌이체</strong><small>입금 후 버튼 누르기</small></div><i />
-            <div><span>03</span><strong>맛있게 냠!</strong><small>준비 완료 알림 확인</small></div>
+            <div><span>01</span><strong>QR 발급</strong><small>테이블·포장 주문 준비</small></div><i />
+            <div><span>02</span><strong>주문 운영</strong><small>입금 확인과 조리 관리</small></div><i />
+            <div><span>03</span><strong>매출 확인</strong><small>날짜별 확정 매출 조회</small></div>
           </div>
           <div className="ticket-cut" />
-          <div className="ticket-bottom"><div><small>오늘의 추천</small><strong>화끈 제육볶음</strong></div><span>BEST</span></div>
+          <div className="ticket-bottom"><div><small>현재 상태</small><strong>{acceptingOrders ? "실시간 주문 접수 중" : "운영 준비 중"}</strong></div><span>{acceptingOrders ? "OPEN" : "READY"}</span></div>
         </div>
       </section>
 

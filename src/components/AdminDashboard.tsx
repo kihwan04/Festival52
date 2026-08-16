@@ -497,9 +497,38 @@ function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]
       <div><span className="setup-icon"><QrCode size={24} /></span><div><h2>테이블 QR 자동 생성</h2><p>테이블 수를 저장하면 1번부터 각각 다른 주문 주소와 QR이 발급됩니다.</p></div></div>
       <form onSubmit={(event) => { event.preventDefault(); onConfigure(count); }}><label>운영 테이블 수<input type="number" min="1" max="200" value={count} onChange={(event) => setCount(Math.min(200, Math.max(1, Number(event.target.value))))} /></label><button type="submit"><Check size={17} /> 테이블 설정 저장</button></form>
     </section>
+    <TakeoutQrCard />
     <div className="table-list-heading"><div><h2>발급된 테이블 QR</h2><p>각 QR은 해당 테이블 번호를 식별합니다. 출력 후 테이블에 부착해 주세요.</p></div><button type="button" onClick={() => window.print()}><QrCode size={16} /> 전체 QR 인쇄</button></div>
     <section className="table-qr-grid">{activeTables.map((table) => <TableQrCard table={table} onRotate={onRotate} key={table.id} />)}</section>
   </>;
+}
+
+function TakeoutQrCard() {
+  const [qr, setQr] = useState({ orderUrl: "", dataUrl: "" });
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const url = `${window.location.origin}/booth`;
+    let active = true;
+    void QRCode.toDataURL(url, { width: 420, margin: 1, color: { dark: "#17212b", light: "#ffffff" } }).then((dataUrl) => {
+      if (active) setQr({ orderUrl: url, dataUrl });
+    });
+    return () => { active = false; };
+  }, []);
+  const copyLink = async () => {
+    if (!qr.orderUrl) return;
+    await navigator.clipboard.writeText(qr.orderUrl);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+  return <section className="takeout-qr-panel">
+    <div className="takeout-qr-copy">
+      <span className="setup-icon takeout"><ShoppingBag size={24} /></span>
+      <div><small>TAKEOUT ORDER</small><h2>포장 주문 QR</h2><p>포장 고객은 이 QR을 스캔하면 테이블 번호 없이 바로 메뉴를 주문할 수 있습니다. 한 번 출력해 계속 사용하세요.</p>
+        <div className="takeout-qr-actions"><button type="button" onClick={() => void copyLink()}><Copy size={15} /> {copied ? "복사 완료" : "주문 링크 복사"}</button>{qr.dataUrl && <a href={qr.dataUrl} download="takeout-order-qr.png"><QrCode size={15} /> QR 이미지 저장</a>}</div>
+      </div>
+    </div>
+    <div className="takeout-qr-image">{qr.dataUrl ? <Image src={qr.dataUrl} width={420} height={420} unoptimized alt="포장 주문 QR" /> : <QrCode size={82} />}</div>
+  </section>;
 }
 
 function TableQrCard({ table, onRotate }: { table: FestivalTable; onRotate: (table: FestivalTable) => void }) {

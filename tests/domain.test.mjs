@@ -192,3 +192,13 @@ test("관리자 일별 매출 집계는 서울 날짜와 확정 결제만 사용
   assert.match(sql, /p\.status = 'CONFIRMED'/i);
   assert.match(sql, /security invoker/i);
 });
+
+test("고객 주문 진입은 운영자가 발급한 테이블·포장 QR로 제공한다", async () => {
+  const home = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(home, /href=.*\/booth|포장 주문 시작하기/);
+  assert.match(home, /href="\/admin"/);
+  assert.match(dashboard, /window\.location\.origin}\/booth/);
+  assert.match(dashboard, /takeout-order-qr\.png/);
+  assert.match(dashboard, /포장 주문 QR/);
+});
