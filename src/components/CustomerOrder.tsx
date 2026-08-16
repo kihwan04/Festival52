@@ -10,6 +10,7 @@ import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings
 
 interface CustomerOrderProps {
   initialFulfillment: FulfillmentType;
+  teamSlug: string;
   tableNumber?: number;
   qrToken?: string;
   menuItems?: MenuItem[];
@@ -19,7 +20,7 @@ interface CustomerOrderProps {
 
 interface CreatedOrder { orderNumber: string; publicToken: string | null; initialOrder: PublicOrder }
 
-export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuItems = DEMO_MENU, storeSettings = DEMO_STORE_SETTINGS, demoMode = false }: CustomerOrderProps) {
+export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrToken, menuItems = DEMO_MENU, storeSettings = DEMO_STORE_SETTINGS, demoMode = false }: CustomerOrderProps) {
   const [fulfillment, setFulfillment] = useState<FulfillmentType>(initialFulfillment);
   const [category, setCategory] = useState("전체");
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -74,7 +75,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
+        body: JSON.stringify({ teamSlug, qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
       });
       const result: unknown = await response.json();
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "message" in result ? String(result.message) : "주문을 접수하지 못했습니다. 메뉴와 재고를 다시 확인해 주세요.");
@@ -162,7 +163,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
     <main className="customer-shell">
       <header className="customer-header">
         <div className="customer-head-row">
-          <a className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>COMPUTER ENGINEERING</small></span></a>
+          <a className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>{storeSettings.stallName}</strong><small>FESTIVAL ORDER</small></span></a>
           <span className={`open-chip ${acceptingOrders ? "" : "closed"}`}><i /> {acceptingOrders ? "주문 가능" : "주문 준비 중"}</span>
         </div>
         <div className="fulfillment-switch" role="group" aria-label="수령 방법">

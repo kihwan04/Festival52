@@ -5,12 +5,12 @@ import { invalidInput } from "@/src/shared/errors/app-error";
 export type StoreSettingsUpdate = Omit<StoreSettings, "configured">;
 
 export interface StoreSettingsGateway {
-  getPublic(): Promise<StoreSettings>;
+  getPublic(teamSlug?: string): Promise<StoreSettings>;
   getAdmin(): Promise<StoreSettings>;
   update(settings: StoreSettingsUpdate): Promise<StoreSettings>;
 }
 
-export const getPublicStoreSettings = (gateway: StoreSettingsGateway) => gateway.getPublic();
+export const getPublicStoreSettings = (gateway: StoreSettingsGateway, teamSlug?: string) => gateway.getPublic(teamSlug);
 export const getAdminStoreSettings = (gateway: StoreSettingsGateway) => gateway.getAdmin();
 
 export function updateStoreSettings(gateway: StoreSettingsGateway, settings: StoreSettingsUpdate): Promise<StoreSettings> {

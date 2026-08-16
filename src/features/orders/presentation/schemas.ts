@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const createOrderSchema = z.object({
+  teamSlug: z.string().regex(/^team-[a-f0-9]{16}$/),
   qrToken: z.string().min(16).max(160).nullable(),
   fulfillmentType: z.enum(["DINE_IN", "TAKEOUT"]),
   clientRequestId: z.string().uuid(),

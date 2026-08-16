@@ -7,6 +7,7 @@ export interface SignedRequestProof {
 }
 
 interface OrderSignatureInput {
+  teamSlug: string;
   qrToken: string | null;
   fulfillmentType: "DINE_IN" | "TAKEOUT";
   clientRequestId: string;
@@ -16,10 +17,10 @@ const encoder = new TextEncoder();
 
 export async function signOrderRequest(request: Request, input: OrderSignatureInput): Promise<SignedRequestProof> {
   const secret = signingSecret();
-  const channel = input.fulfillmentType === "DINE_IN" ? input.qrToken ?? "INVALID_TABLE" : "TAKEOUT";
+  const channel = input.fulfillmentType === "DINE_IN" ? input.qrToken ?? "INVALID_TABLE" : input.teamSlug;
   const rateKeyHash = await hmacHex(secret, `order-rate-v1|${trustedClientAddress(request)}|${channel}`);
   const requestTimestamp = Math.floor(Date.now() / 1000);
-  const message = `order-v1|${requestTimestamp}|${input.clientRequestId}|${input.fulfillmentType}|${input.qrToken ?? ""}|${rateKeyHash}`;
+  const message = `order-v2|${requestTimestamp}|${input.clientRequestId}|${input.teamSlug}|${input.fulfillmentType}|${input.qrToken ?? ""}|${rateKeyHash}`;
   return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
 }
 
@@ -29,6 +30,26 @@ export async function signLoginAttempt(request: Request): Promise<SignedRequestP
   const requestTimestamp = Math.floor(Date.now() / 1000);
   const message = `login-v1|${requestTimestamp}|${rateKeyHash}`;
   return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
+}
+
+export async function signSignupAttempt(request: Request): Promise<SignedRequestProof> {
+  const secret = signingSecret();
+  const rateKeyHash = await hmacHex(secret, `signup-rate-v1|${trustedClientAddress(request)}`);
+  const requestTimestamp = Math.floor(Date.now() / 1000);
+  const message = `signup-v1|${requestTimestamp}|${rateKeyHash}`;
+  return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
+}
+
+export async function signSignupProvision(input: {
+  departmentName: string;
+  teamName: string;
+  displayName: string;
+  email: string;
+}): Promise<SignedRequestProof> {
+  const secret = signingSecret();
+  const requestTimestamp = Math.floor(Date.now() / 1000);
+  const message = `signup-user-v1|${requestTimestamp}|${input.email.toLowerCase()}|${input.departmentName}|${input.teamName}|${input.displayName}`;
+  return { rateKeyHash: "", requestTimestamp, signature: await hmacHex(secret, message) };
 }
 
 function signingSecret(): string {

@@ -12,8 +12,10 @@ const settingsSchema = z.object({
 export class SupabaseStoreSettingsGateway implements StoreSettingsGateway {
   constructor(private readonly client: SupabaseClient) {}
 
-  async getPublic(): Promise<StoreSettings> {
-    const { data, error } = await this.client.rpc("get_public_store_settings");
+  async getPublic(teamSlug?: string): Promise<StoreSettings> {
+    const { data, error } = teamSlug
+      ? await this.client.rpc("get_public_store_settings", { p_team_slug: teamSlug })
+      : await this.client.rpc("get_public_store_settings");
     if (error) throw conflict("매장 설정을 불러오지 못했습니다.");
     return mapSettings(data);
   }

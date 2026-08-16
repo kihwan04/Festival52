@@ -8,9 +8,11 @@ export const metadata: Metadata = { title: "테이블 주문" };
 
 export default async function TableOrderPage({ params }: { params: Promise<{ qrToken: string }> }) {
   const { qrToken } = await params;
-  const [table, menuItems, storeSettings] = await Promise.all([resolveTable(qrToken), loadPublicMenu(), loadPublicStoreSettings()]);
+  const table = await resolveTable(qrToken);
+  if (!table) return <InvalidQr />;
+  const [menuItems, storeSettings] = await Promise.all([loadPublicMenu(table.teamSlug), loadPublicStoreSettings(table.teamSlug)]);
   if (!table || !menuItems) return <InvalidQr />;
-  return <CustomerOrder initialFulfillment="DINE_IN" tableNumber={table.tableNumber} qrToken={qrToken} menuItems={menuItems} storeSettings={storeSettings} demoMode={isDemoMode()} />;
+  return <CustomerOrder initialFulfillment="DINE_IN" teamSlug={table.teamSlug} tableNumber={table.tableNumber} qrToken={qrToken} menuItems={menuItems} storeSettings={storeSettings} demoMode={isDemoMode()} />;
 }
 
 function InvalidQr() {

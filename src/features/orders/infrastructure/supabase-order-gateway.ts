@@ -30,6 +30,7 @@ export class SupabaseOrderGateway implements OrderGateway {
 
   async create(command: CreateOrderCommand, security: CreateOrderSecurity): Promise<CreatedOrder> {
     const { data, error } = await this.client.rpc("create_festival_order", {
+      p_team_slug: command.teamSlug,
       p_qr_token: command.qrToken,
       p_fulfillment_type: command.fulfillmentType,
       p_client_request_id: command.clientRequestId,

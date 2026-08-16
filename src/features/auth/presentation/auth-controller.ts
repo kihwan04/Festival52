@@ -1,15 +1,26 @@
 import { z } from "zod";
 import { getPublicSupabase } from "@/src/lib/supabase/server";
-import { authorizeLoginAttempt, changeAdminPassword, loginAdmin } from "@/src/features/auth/application/auth-service";
+import { authorizeLoginAttempt, authorizeSignupAttempt, changeAdminPassword, loginAdmin, signupOperator } from "@/src/features/auth/application/auth-service";
 import { SupabaseAuthGateway } from "@/src/features/auth/infrastructure/supabase-auth-gateway";
 import { adminSessionCookies, clearedAdminSessionCookies } from "@/src/shared/auth/auth-cookies";
 import { serviceUnavailable } from "@/src/shared/errors/app-error";
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
 import { assertSecureAdminPassword } from "@/src/shared/security/password-security";
-import { signLoginAttempt } from "@/src/shared/security/request-signing";
+import { signLoginAttempt, signSignupAttempt, signSignupProvision } from "@/src/shared/security/request-signing";
 import { requireAdminSession } from "@/src/shared/auth/admin-session";
 
 const loginSchema = z.object({ email: z.string().email().max(240), password: z.string().min(8).max(200) });
+const signupSchema = z.object({
+  departmentName: z.string().trim().min(2).max(80).refine((value) => !value.includes("|")),
+  teamName: z.string().trim().min(2).max(80).refine((value) => !value.includes("|")),
+  displayName: z.string().trim().min(2).max(60).refine((value) => !value.includes("|")),
+  email: z.string().trim().email().max(240),
+  password: z.string().min(14).max(200),
+  passwordConfirm: z.string().min(14).max(200),
+}).refine((value) => value.password === value.passwordConfirm, {
+  path: ["passwordConfirm"],
+  message: "비밀번호가 서로 다릅니다.",
+});
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(8).max(200),
   newPassword: z.string().min(14).max(200),
@@ -29,6 +40,36 @@ export function loginController(request: Request) {
     const result = await loginAdmin(gateway, command.email, command.password);
     if (!result.accessToken || !result.refreshToken) throw serviceUnavailable("로그인 세션을 만들지 못했습니다.");
     return { body: { ok: true }, cookies: adminSessionCookies(result.accessToken, result.refreshToken, result.expiresIn) };
+  });
+}
+
+export function signupController(request: Request) {
+  return handleController(async () => {
+    const command = await parseJson(request, signupSchema, "학과명, 운영팀명과 계정 정보를 확인해 주세요.");
+    const gateway = authGateway();
+    await authorizeSignupAttempt(gateway, await signSignupAttempt(request));
+    await assertSecureAdminPassword(command.password, command.email);
+    const signupCommand = {
+      departmentName: command.departmentName,
+      teamName: command.teamName,
+      displayName: command.displayName,
+      email: command.email.toLowerCase(),
+      password: command.password,
+    };
+    const result = await signupOperator(
+      gateway,
+      signupCommand,
+      new URL("/admin", request.url).toString(),
+      await signSignupProvision(signupCommand),
+    );
+    if (result.confirmationRequired) {
+      return { body: { ok: true, confirmationRequired: true } };
+    }
+    if (!result.accessToken || !result.refreshToken) throw serviceUnavailable("로그인 세션을 만들지 못했습니다.");
+    return {
+      body: { ok: true, confirmationRequired: false },
+      cookies: adminSessionCookies(result.accessToken, result.refreshToken, result.expiresIn),
+    };
   });
 }
 

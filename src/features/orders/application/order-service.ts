@@ -1,6 +1,7 @@
 import type { AdminOrderAction, FulfillmentType, PublicOrder } from "@/src/features/orders/domain/order";
 
 export interface CreateOrderCommand {
+  teamSlug: string;
   qrToken: string | null;
   fulfillmentType: FulfillmentType;
   clientRequestId: string;

@@ -10,11 +10,13 @@ const publicMenuSchema = z.array(z.object({
 
 const emojiByCategory: Record<string, string> = { "안주": "🥘", "식사": "🍜", "간식": "🥔", "음료": "🍹" };
 
-export async function loadPublicMenu(): Promise<MenuItem[] | null> {
+export async function loadPublicMenu(teamSlug?: string): Promise<MenuItem[] | null> {
   if (isDemoMode()) return DEMO_MENU;
   const supabase = getPublicSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("get_public_menu");
+  const { data, error } = teamSlug
+    ? await supabase.rpc("get_public_menu", { p_team_slug: teamSlug })
+    : await supabase.rpc("get_public_menu");
   if (error) return null;
   const parsed = publicMenuSchema.safeParse(data);
   if (!parsed.success) return null;
@@ -25,13 +27,13 @@ export async function loadPublicMenu(): Promise<MenuItem[] | null> {
   }));
 }
 
-const tableSchema = z.object({ id: z.string().uuid(), table_number: z.number().int().positive() });
+const tableSchema = z.object({ id: z.string().uuid(), table_number: z.number().int().positive(), team_slug: z.string().regex(/^team-[a-f0-9]{16}$/) });
 
-export async function resolveTable(qrToken: string): Promise<{ id: string; tableNumber: number } | null> {
+export async function resolveTable(qrToken: string): Promise<{ id: string; tableNumber: number; teamSlug: string } | null> {
   if (isDemoMode()) {
     const demoTableNumber = qrToken === "table-7-demo" ? 7 : Number(/^demo-table-(\d+)-qr-[a-z0-9-]+$/i.exec(qrToken)?.[1]);
     if (Number.isInteger(demoTableNumber) && demoTableNumber > 0 && demoTableNumber <= 200) {
-      return { id: `00000000-0000-4000-8000-${String(demoTableNumber).padStart(12, "0")}`, tableNumber: demoTableNumber };
+      return { id: `00000000-0000-4000-8000-${String(demoTableNumber).padStart(12, "0")}`, tableNumber: demoTableNumber, teamSlug: "team-0000000000000000" };
     }
   }
   const supabase = getPublicSupabase();
@@ -39,5 +41,13 @@ export async function resolveTable(qrToken: string): Promise<{ id: string; table
   const { data, error } = await supabase.rpc("resolve_festival_table", { p_qr_token: qrToken });
   if (error) return null;
   const parsed = tableSchema.safeParse(data);
-  return parsed.success ? { id: parsed.data.id, tableNumber: parsed.data.table_number } : null;
+  return parsed.success ? { id: parsed.data.id, tableNumber: parsed.data.table_number, teamSlug: parsed.data.team_slug } : null;
+}
+
+export async function loadLegacyTeamSlug(): Promise<string | null> {
+  if (isDemoMode()) return "team-0000000000000000";
+  const supabase = getPublicSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_legacy_festival_team_slug");
+  return !error && typeof data === "string" && /^team-[a-f0-9]{16}$/.test(data) ? data : null;
 }

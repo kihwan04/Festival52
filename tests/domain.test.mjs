@@ -113,6 +113,7 @@ test("API 라우트는 프레젠테이션 컨트롤러만 노출한다", async (
     "../app/api/admin/settings/route.ts",
     "../app/api/admin/snapshot/route.ts",
     "../app/api/auth/login/route.ts",
+    "../app/api/auth/signup/route.ts",
   ];
   for (const route of routes) {
     const source = await readFile(new URL(route, import.meta.url), "utf8");
@@ -200,9 +201,45 @@ test("고객 주문 진입은 운영자가 발급한 테이블·포장 QR로 제
   const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(home, /href=.*\/booth|포장 주문 시작하기/);
   assert.match(home, /href="\/admin"/);
-  assert.match(dashboard, /window\.location\.origin}\/booth/);
+  assert.match(dashboard, /window\.location\.origin}\/s\//);
   assert.match(dashboard, /takeout-order-qr\.png/);
   assert.match(dashboard, /포장 주문 QR/);
+});
+
+test("운영팀 가입은 학과별 테넌트를 만들고 모든 운영 데이터를 DB에서 격리한다", async () => {
+  const [migration, hardening, signup, signing] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260816050322_add_multi_team_signup.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260816051738_harden_multi_team_signup_proof.sql", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/AdminLogin.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/shared/security/request-signing.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(migration, /create table public\.festival_teams/i);
+  assert.match(migration, /create table public\.festival_team_members/i);
+  assert.match(migration, /add column team_id uuid references public\.festival_teams/i);
+  assert.match(migration, /current_festival_team_id\(\)/i);
+  assert.match(migration, /team_id = \(select public\.current_festival_team_id\(\)\)/i);
+  assert.match(migration, /handle_festival_operator_signup/i);
+  assert.match(migration, /festival_department_name/i);
+  assert.match(migration, /'operator-signup'[\s\S]*3, 3600/i);
+  assert.match(migration, /on conflict \(team_id, table_number\)/i);
+  assert.match(signup, /학과명/);
+  assert.match(signup, /운영팀명/);
+  assert.match(hardening, /signup-user-v1/);
+  assert.match(hardening, /verify_festival_signature/);
+  assert.match(signing, /signSignupProvision/);
+});
+
+test("팀별 포장 주소와 주문 서명에 공개 팀 식별자를 포함한다", async () => {
+  const [dashboard, customer, signing, schema] = await Promise.all([
+    readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/shared/security/request-signing.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/orders/presentation/schemas.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(dashboard, /\/s\/\$\{encodeURIComponent\(team\.publicSlug\)\}/);
+  assert.match(customer, /JSON\.stringify\(\{ teamSlug,/);
+  assert.match(signing, /order-v2/);
+  assert.match(schema, /teamSlug: z\.string\(\)\.regex/);
 });
 
 test("테이블 QR 설정 응답은 서버의 camelCase 형식을 그대로 사용한다", async () => {

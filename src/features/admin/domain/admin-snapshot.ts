@@ -14,6 +14,12 @@ export interface DailySalesSummary extends SalesSummary {
   date: string;
 }
 
+export interface TeamIdentity {
+  departmentName: string;
+  teamName: string;
+  publicSlug: string;
+}
+
 export function emptySalesSummary(): SalesSummary {
   return { totalRevenue: 0, confirmedOrders: 0, dineInOrders: 0, takeoutOrders: 0, averageOrderAmount: 0 };
 }
@@ -47,6 +53,7 @@ export function shiftDateKey(date: string, days: number): string {
 }
 
 export interface AdminSnapshot {
+  team: TeamIdentity;
   orders: DemoOrder[];
   menu: MenuItem[];
   tables: FestivalTable[];

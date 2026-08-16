@@ -7,6 +7,11 @@ import type { DemoOrder, FestivalTable } from "@/src/shared/demo-data";
 import { conflict } from "@/src/shared/errors/app-error";
 
 const snapshotSchema = z.object({
+  team: z.object({
+    department_name: z.string(),
+    team_name: z.string(),
+    public_slug: z.string().regex(/^team-[a-f0-9]{16}$/),
+  }),
   orders: z.array(z.object({
     id: z.string().uuid(),
     order_number: z.string(),
@@ -52,6 +57,11 @@ export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
     const snapshot = parsed.data;
     const dailySales = snapshot.daily_sales.map(mapDailySale);
     return {
+      team: {
+        departmentName: snapshot.team.department_name,
+        teamName: snapshot.team.team_name,
+        publicSlug: snapshot.team.public_slug,
+      },
       orders: snapshot.orders.map(mapOrder),
       menu: snapshot.menu.map(mapMenu),
       tables: snapshot.tables.map(mapTable),

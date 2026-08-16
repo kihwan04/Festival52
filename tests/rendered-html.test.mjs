@@ -42,14 +42,15 @@ test("관리자 설정에서 메뉴와 테이블 QR 관리를 제공한다", asy
   assert.doesNotMatch(html, /매출 현황<\/button>[^<]*disabled/i);
 });
 
-test("운영 모드의 관리자 로그인은 기존 운영자 로그인만 제공한다", async () => {
+test("운영 모드의 관리자 화면은 로그인과 학과별 운영팀 가입을 제공한다", async () => {
   process.env.FESTIVAL_DEMO_MODE = "false";
   try {
     const response = await render("/admin");
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, /운영자 로그인/);
-    assert.doesNotMatch(html, /처음 연결인가요|관리자 만들기|FIRST ADMIN/);
+    assert.match(html, /회원가입/);
+    assert.doesNotMatch(html, /FIRST ADMIN/);
   } finally {
     process.env.FESTIVAL_DEMO_MODE = "true";
   }

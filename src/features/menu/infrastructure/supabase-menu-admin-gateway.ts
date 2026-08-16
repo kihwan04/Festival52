@@ -57,7 +57,7 @@ export class SupabaseMenuAdminGateway implements MenuAdminGateway {
   }
 
   async addCategory(name: string): Promise<void> {
-    const { error } = await this.client.from("menu_categories").insert({ name });
+    const { error } = await this.client.rpc("create_menu_category", { p_name: name });
     if (error) throw conflict("같은 이름의 카테고리가 있는지 확인해 주세요.");
   }
 

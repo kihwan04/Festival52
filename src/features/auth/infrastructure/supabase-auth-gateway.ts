@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AuthGateway, AuthSessionResult, LoginAttemptProof } from "@/src/features/auth/application/auth-service";
+import type { AuthGateway, AuthSessionResult, LoginAttemptProof, OperatorSignupCommand } from "@/src/features/auth/application/auth-service";
 import { getUserSupabase } from "@/src/lib/supabase/server";
 import { conflict, forbidden, rateLimited, serviceUnavailable, unauthenticated } from "@/src/shared/errors/app-error";
 
@@ -17,6 +17,17 @@ export class SupabaseAuthGateway implements AuthGateway {
     throw serviceUnavailable("로그인 보안 확인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
   }
 
+  async authorizeSignupAttempt(proof: LoginAttemptProof): Promise<void> {
+    const { error } = await this.publicClient.rpc("authorize_festival_signup_attempt", {
+      p_rate_key_hash: proof.rateKeyHash,
+      p_request_timestamp: proof.requestTimestamp,
+      p_signature: proof.signature,
+    });
+    if (!error) return;
+    if (error.message.toLowerCase().includes("rate limit")) throw rateLimited("가입 요청이 너무 많습니다. 한 시간 뒤 다시 시도해 주세요.");
+    throw serviceUnavailable("가입 보안 확인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
+
   async login(email: string, password: string): Promise<AuthSessionResult> {
     const { data, error } = await this.publicClient.auth.signInWithPassword({ email, password });
     if (error || !data.session) throw unauthenticated("로그인 정보가 올바르지 않습니다.");
@@ -25,6 +36,38 @@ export class SupabaseAuthGateway implements AuthGateway {
     const { data: isAdmin } = await userClient.rpc("is_festival_admin");
     if (isAdmin !== true) throw forbidden("등록된 운영자 계정이 아닙니다.");
     return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, expiresIn: data.session.expires_in, confirmationRequired: false };
+  }
+
+  async signup(command: OperatorSignupCommand, emailRedirectTo: string, proof: LoginAttemptProof): Promise<AuthSessionResult> {
+    const { data, error } = await this.publicClient.auth.signUp({
+      email: command.email,
+      password: command.password,
+      options: {
+        emailRedirectTo,
+        data: {
+          festival_signup_version: "1",
+          festival_department_name: command.departmentName,
+          festival_team_name: command.teamName,
+          festival_display_name: command.displayName,
+          festival_signup_timestamp: String(proof.requestTimestamp),
+          festival_signup_signature: proof.signature,
+        },
+      },
+    });
+    if (error || !data.user) throw conflict("가입 요청을 처리하지 못했습니다. 이미 가입한 이메일이면 로그인해 주세요.");
+    if (!data.session) {
+      return { accessToken: null, refreshToken: null, expiresIn: 0, confirmationRequired: true };
+    }
+    const userClient = getUserSupabase(data.session.access_token);
+    if (!userClient) throw serviceUnavailable("운영팀 권한을 확인하지 못했습니다.");
+    const { data: isAdmin, error: roleError } = await userClient.rpc("is_festival_admin");
+    if (roleError || isAdmin !== true) throw forbidden("운영팀 공간을 만들지 못했습니다.");
+    return {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresIn: data.session.expires_in,
+      confirmationRequired: false,
+    };
   }
 
   async changePassword(accessToken: string, currentPassword: string, newPassword: string): Promise<AuthSessionResult> {

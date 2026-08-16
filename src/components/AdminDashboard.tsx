@@ -7,7 +7,7 @@ import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, 
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
 import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
-import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type SalesSummary } from "@/src/features/admin/domain/admin-snapshot";
+import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type SalesSummary, type TeamIdentity } from "@/src/features/admin/domain/admin-snapshot";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
@@ -35,6 +35,7 @@ const DEMO_SALES: SalesSummary = {
 const DEMO_DAILY_SALES: DailySalesSummary[] = [{ date: getSeoulDateKey(), ...DEMO_SALES }];
 
 const DEMO_SNAPSHOT: AdminSnapshot = {
+  team: { departmentName: "컴퓨터공학과", teamName: "컴공 52 운영팀", publicSlug: "team-0000000000000000" },
   orders: DEMO_ORDERS,
   menu: DEMO_MENU,
   tables: DEMO_TABLES,
@@ -56,6 +57,7 @@ export function AdminDashboard({
   const [tables, setTables] = useState<FestivalTable[]>(initialSnapshot.tables);
   const [categories, setCategories] = useState<string[]>(initialSnapshot.categories);
   const [settings, setSettings] = useState<StoreSettings>(initialSnapshot.settings);
+  const [team, setTeam] = useState<TeamIdentity>(initialSnapshot.team);
   const [sales, setSales] = useState<SalesSummary>(initialSnapshot.sales);
   const [dailySales, setDailySales] = useState<DailySalesSummary[]>(initialSnapshot.dailySales ?? []);
   const [syncedAt, setSyncedAt] = useState(initialSnapshot.syncedAt);
@@ -65,6 +67,7 @@ export function AdminDashboard({
   const refreshInFlight = useRef(false);
 
   const applySnapshot = useCallback((snapshot: AdminSnapshot) => {
+    setTeam(snapshot.team);
     setOrders(snapshot.orders);
     setMenu(snapshot.menu);
     setTables(snapshot.tables);
@@ -321,7 +324,7 @@ export function AdminDashboard({
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar">
-        <a className="brand admin-brand" href="/"><span className="brand-mark">52</span><span><strong>컴공</strong><small>ADMIN CONSOLE</small></span></a>
+        <a className="brand admin-brand" href="/"><span className="brand-mark">52</span><span><strong>{team.departmentName}</strong><small>{team.teamName}</small></span></a>
         <nav aria-label="운영 메뉴">
           <button type="button" className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><ClipboardList size={20} /> 주문 관리 <b>{orders.filter((item) => item.orderStatus !== "SERVED" && item.orderStatus !== "CANCELLED").length}</b></button>
           <button type="button" className={view === "inventory" ? "active" : ""} onClick={() => setView("inventory")}><Package size={20} /> 메뉴·재고 <b className="warn-count">{menu.filter((item) => item.stockQuantity <= 5 && item.status !== "ARCHIVED").length}</b></button>
@@ -334,7 +337,7 @@ export function AdminDashboard({
 
       <section className="admin-main">
         <header className="admin-topbar">
-          <div><h1>{title[view]}</h1><p><span className="live-dot" /> {syncing ? "동기화 중" : `3초마다 동기화 · ${new Date(syncedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</p></div>
+          <div><h1>{title[view]}</h1><p><span className="live-dot" /> {syncing ? "동기화 중" : `10초마다 동기화 · ${new Date(syncedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</p></div>
           <div className="admin-tools">{view === "orders" && <div className="admin-search"><Search size={18} /><input aria-label="주문 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="주문번호, 메뉴 검색" /></div>}<button type="button" className="icon-button" aria-label="입금 확인 주문 보기" onClick={() => { setView("orders"); setFilter("PAYMENT"); showNotice(pendingPayments ? `입금 확인이 필요한 주문 ${pendingPayments}건입니다.` : "확인할 입금 알림이 없습니다."); }}><Bell size={20} />{pendingPayments > 0 && <i />}</button></div>
         </header>
 
@@ -356,7 +359,7 @@ export function AdminDashboard({
           <section className="orders-grid" aria-label="주문 목록">
             {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>해당 주문을 모두 처리했어요</strong><span>새 주문이 들어오면 자동으로 표시됩니다.</span></div> : visibleOrders.map((order) => <OrderCard order={order} onAdvance={advance} onCancel={cancel} key={order.id} />)}
           </section>
-        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
+        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
       {notice && <div className="admin-toast"><Check size={17} /> {notice}</div>}
     </main>
@@ -539,7 +542,7 @@ function MenuEditor({ item, categories, onClose, onSave }: { item: MenuItem | nu
   </form></div>;
 }
 
-function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]; onConfigure: (count: number) => Promise<boolean>; onRotate: (table: FestivalTable) => void }) {
+function TablesView({ team, tables, onConfigure, onRotate }: { team: TeamIdentity; tables: FestivalTable[]; onConfigure: (count: number) => Promise<boolean>; onRotate: (table: FestivalTable) => void }) {
   const activeTables = tables.filter((table) => table.isActive).sort((a, b) => a.tableNumber - b.tableNumber);
   const [count, setCount] = useState(activeTables.length || 1);
   const [saving, setSaving] = useState(false);
@@ -554,24 +557,24 @@ function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]
       <div><span className="setup-icon"><QrCode size={24} /></span><div><h2>테이블 QR 생성</h2><p>테이블 수를 입력하고 생성 버튼을 누르면 1번부터 서로 다른 주문 QR이 발급됩니다. 현재 {activeTables.length}개가 사용 중입니다.</p></div></div>
       <form onSubmit={submit}><label>운영 테이블 수<input type="number" min="1" max="200" value={count} onChange={(event) => setCount(Math.min(200, Math.max(1, Number(event.target.value))))} /></label><button type="submit" disabled={saving}><Check size={17} /> {saving ? "생성 중…" : `${count}개 QR 생성`}</button></form>
     </section>
-    <TakeoutQrCard />
+    <TakeoutQrCard team={team} />
     <div className="table-list-heading"><div><h2>발급된 테이블 QR</h2><p>각 QR은 해당 테이블 번호를 식별합니다. 출력 후 테이블에 부착해 주세요.</p></div><button type="button" onClick={() => window.print()}><QrCode size={16} /> 전체 QR 인쇄</button></div>
     <section className="table-qr-grid">{activeTables.map((table) => <TableQrCard table={table} onRotate={onRotate} key={table.id} />)}</section>
   </>;
 }
 
-function TakeoutQrCard() {
+function TakeoutQrCard({ team }: { team: TeamIdentity }) {
   const [qr, setQr] = useState({ orderUrl: "", dataUrl: "" });
   const [qrError, setQrError] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
-    const url = `${window.location.origin}/booth`;
+    const url = `${window.location.origin}/s/${encodeURIComponent(team.publicSlug)}`;
     let active = true;
     void QRCode.toDataURL(url, { width: 420, margin: 1, color: { dark: "#17212b", light: "#ffffff" } })
       .then((dataUrl) => { if (active) setQr({ orderUrl: url, dataUrl }); })
       .catch(() => { if (active) setQrError(true); });
     return () => { active = false; };
-  }, []);
+  }, [team.publicSlug]);
   const copyLink = async () => {
     if (!qr.orderUrl) return;
     await navigator.clipboard.writeText(qr.orderUrl);
