@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ChefHat, ChevronRight, PackageCheck, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { ArrowLeft, Check, ChefHat, ChevronRight, Copy, PackageCheck, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU } from "@/src/shared/demo-data";
 import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
 import { publicOrderProgressStep, publicOrderStatusMessage, type FulfillmentType, type PublicOrder } from "@/src/features/orders/domain/order";
@@ -30,6 +30,10 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
   const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const clientRequestId = useRef<string | null>(null);
   const { order: syncedOrder, connected, lastUpdatedAt, refresh: refreshOrder } = usePublicOrderStatus(createdOrder?.publicToken ?? null);
 
   const categories = ["전체", ...Array.from(new Set(menuItems.map((item) => item.category)))];
@@ -67,10 +71,11 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
         setOrderComplete(true);
         return;
       }
+      clientRequestId.current ??= crypto.randomUUID();
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: crypto.randomUUID(), items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
+        body: JSON.stringify({ qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
       });
       const result: unknown = await response.json();
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "message" in result ? String(result.message) : "주문을 접수하지 못했습니다. 메뉴와 재고를 다시 확인해 주세요.");
@@ -88,10 +93,28 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
 
   const claimTransfer = async () => {
     if (!createdOrder?.publicToken) { setTransferClaimed(true); return; }
-    const response = await fetch("/api/orders/transfer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicToken: createdOrder.publicToken }) });
-    if (response.ok) {
+    setTransferError(null);
+    setTransferSubmitting(true);
+    try {
+      const response = await fetch("/api/orders/transfer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ publicToken: createdOrder.publicToken }) });
+      const result = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(result?.message ?? "입금 확인 요청을 보내지 못했습니다. 잠시 후 다시 눌러 주세요.");
       setTransferClaimed(true);
       await refreshOrder();
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : "입금 확인 요청을 보내지 못했습니다.");
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
+
+  const copyPaymentValue = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyNotice(`${label}를 복사했어요.`);
+      window.setTimeout(() => setCopyNotice(null), 1800);
+    } catch {
+      setCopyNotice("길게 눌러 직접 복사해 주세요.");
     }
   };
 
@@ -119,13 +142,18 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
         {awaitingPayment && <section className="transfer-card">
           <div className="transfer-head"><span>입금 계좌</span><strong>{formatWon(totalAmount)}</strong></div>
           <div className="bank-account"><span>{storeSettings.bankName}</span><strong>{storeSettings.accountNumber}</strong><small>예금주 · {storeSettings.accountHolder}</small></div>
+          <div className="payment-copy-actions">
+            <button type="button" onClick={() => void copyPaymentValue(storeSettings.accountNumber, "계좌번호")}><Copy size={14} /> 계좌번호 복사</button>
+            <button type="button" onClick={() => void copyPaymentValue(createdOrder?.orderNumber ?? "", "입금자명")}><Copy size={14} /> 입금자명 복사</button>
+          </div>
+          {copyNotice && <div className="copy-notice" role="status">{copyNotice}</div>}
           <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요.</p>
         </section>}
         {displayOrder && <LiveOrderProgress order={displayOrder} />}
         {createdOrder?.publicToken && <Link className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></Link>}
         {awaitingPayment && <div className="sticky-order-action">
-          <button className="checkout-button" type="button" disabled={paymentClaimed} onClick={claimTransfer}>{paymentClaimed ? <><Check size={20} /> 입금 확인을 요청했어요</> : "입금했어요"}</button>
-          <small>이 버튼은 입금 완료가 아닌 확인 요청이에요.</small>
+          <button className="checkout-button" type="button" disabled={paymentClaimed || transferSubmitting} onClick={claimTransfer}>{paymentClaimed ? <><Check size={20} /> 입금 확인을 요청했어요</> : transferSubmitting ? "확인 요청 보내는 중…" : "입금했어요"}</button>
+          {transferError ? <small className="transfer-action-error" role="alert">{transferError}</small> : <small>이 버튼은 입금 완료가 아닌 확인 요청이에요.</small>}
         </div>}
       </main>
     );
@@ -170,7 +198,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
 
       {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">
         <div className="sheet-handle" /><div className="sheet-title"><div><small>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장"}</small><h2>주문을 확인해 주세요</h2></div><button className="round-button" type="button" onClick={() => setCartOpen(false)} aria-label="닫기"><X size={19} /></button></div>
-        <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.id}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{formatWon(item.price)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label="수량 줄이기"><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} aria-label="수량 늘리기"><Plus size={15} /></button></div></div>)}</div>
+        <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.id}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{formatWon(item.price)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} disabled={item.quantity >= item.stockQuantity || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
         <div className="cart-summary"><span>총 {totalQuantity}개</span><strong>{formatWon(totalAmount)}</strong></div>
         {submissionError && <p className="submission-error">{submissionError}</p>}
         <button className="checkout-button" type="button" disabled={submitting || !acceptingOrders} onClick={placeOrder}>{submitting ? "재고 확인 중…" : acceptingOrders ? "계좌이체로 주문하기" : "현재 주문 준비 중"} {!submitting && acceptingOrders && <ChevronRight size={19} />}</button><p className="checkout-caption">주문 후 입금 계좌와 주문번호를 안내해 드려요.</p>

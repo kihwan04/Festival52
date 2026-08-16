@@ -1,5 +1,6 @@
 export interface AuthSessionResult {
   accessToken: string | null;
+  refreshToken: string | null;
   expiresIn: number;
   confirmationRequired: boolean;
 }

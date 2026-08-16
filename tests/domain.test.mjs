@@ -140,3 +140,20 @@ test("고객 주문 현황은 2초 주기와 화면 복귀 시 즉시 동기화�
   assert.match(customer, /aria-live="polite"/);
   assert.match(customer, /조리 중/);
 });
+
+test("네트워크 재시도는 같은 요청 ID를 사용해 중복 주문을 막는다", async () => {
+  const customer = await readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8");
+  assert.match(customer, /clientRequestId = useRef<string \| null>\(null\)/);
+  assert.match(customer, /clientRequestId\.current \?\?= crypto\.randomUUID\(\)/);
+  assert.match(customer, /clientRequestId: clientRequestId\.current/);
+  assert.doesNotMatch(customer, /clientRequestId: crypto\.randomUUID\(\)/);
+});
+
+test("관리자 세션은 갱신 토큰을 보관하고 만료 전에 연장한다", async () => {
+  const cookies = await readFile(new URL("../src/shared/auth/auth-cookies.ts", import.meta.url), "utf8");
+  const session = await readFile(new URL("../src/shared/auth/admin-session.ts", import.meta.url), "utf8");
+  assert.match(cookies, /festival_refresh_token/);
+  assert.match(cookies, /httpOnly: true/);
+  assert.match(session, /refreshSession\(\{ refresh_token: refreshToken \}\)/);
+  assert.match(session, /auth\.getUser\(accessToken\)/);
+});
