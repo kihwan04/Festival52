@@ -6,9 +6,10 @@ const REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const cookieOptions = (maxAge: number) => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  sameSite: "strict" as const,
   path: "/",
   maxAge,
+  priority: "high" as const,
 });
 
 export function adminSessionCookies(accessToken: string, refreshToken: string, expiresIn: number) {

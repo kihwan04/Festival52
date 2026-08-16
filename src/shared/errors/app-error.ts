@@ -5,6 +5,7 @@ export type AppErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "SERVICE_UNAVAILABLE"
+  | "RATE_LIMITED"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
@@ -24,6 +25,7 @@ export const forbidden = (message = "이 작업을 수행할 권한이 없습니
 export const notFound = (message: string) => new AppError("NOT_FOUND", message, 404);
 export const conflict = (message: string) => new AppError("CONFLICT", message, 409);
 export const serviceUnavailable = (message: string) => new AppError("SERVICE_UNAVAILABLE", message, 503);
+export const rateLimited = (message: string) => new AppError("RATE_LIMITED", message, 429);
 
 export function asAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;

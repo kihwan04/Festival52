@@ -10,6 +10,7 @@ export interface PublicOrder {
   total_amount: number;
   order_status: OrderStatus;
   payment_status: PaymentStatus;
+  expires_at?: string | null;
   items: Array<{ name: string; quantity: number; subtotal: number }>;
 }
 

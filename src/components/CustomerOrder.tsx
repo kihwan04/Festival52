@@ -135,7 +135,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
           <p className="success-kicker">실시간 주문 현황</p>
           <h1>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</h1>
           <div className="fulfillment-pill">{fulfillment === "TAKEOUT" ? <><ShoppingBag size={17} /> 포장 주문</> : <><UtensilsCrossed size={17} /> 테이블 {tableNumber ?? 7}</>}</div>
-          <span className={`customer-live-chip ${connected || demoMode ? "connected" : ""}`}><i /> {connected || demoMode ? "2초마다 자동 갱신" : "상태 연결 중"}{lastUpdatedAt && ` · ${lastUpdatedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</span>
+          <span className={`customer-live-chip ${connected || demoMode ? "connected" : ""}`}><i /> {connected || demoMode ? "4초마다 자동 갱신" : "상태 연결 중"}{lastUpdatedAt && ` · ${lastUpdatedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</span>
           <p className="success-copy">{displayOrder ? publicOrderStatusMessage(displayOrder) : "주문 상태를 불러오고 있어요."}</p>
         </section>
         {awaitingPayment && <section className="transfer-card">
@@ -146,7 +146,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
             <button type="button" onClick={() => void copyPaymentValue(createdOrder?.orderNumber ?? "", "입금자명")}><Copy size={14} /> 입금자명 복사</button>
           </div>
           {copyNotice && <div className="copy-notice" role="status">{copyNotice}</div>}
-          <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요.</p>
+          <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요. 미입금 상태가 10분간 계속되면 주문과 확보 재고가 자동으로 취소됩니다.</p>
         </section>}
         {displayOrder && <LiveOrderProgress order={displayOrder} />}
         {createdOrder?.publicToken && <a className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></a>}
@@ -192,7 +192,7 @@ export function CustomerOrder({ initialFulfillment, tableNumber, qrToken, menuIt
         })}
       </section>
 
-      <div className="customer-note"><Store size={18} /><span>주문 즉시 재고가 확보돼요.<small>결제 전 취소 시 재고는 자동 복구됩니다.</small></span></div>
+      <div className="customer-note"><Store size={18} /><span>주문 즉시 재고가 확보돼요.<small>10분 안에 입금 표시가 없으면 주문이 자동 취소되고 재고가 복구됩니다.</small></span></div>
       {totalQuantity > 0 && <button type="button" className="floating-cart" onClick={() => setCartOpen(true)}><span className="cart-count">{totalQuantity}</span><strong>주문 바구니 보기</strong><span>{formatWon(totalAmount)} <ChevronRight size={18} /></span></button>}
 
       {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">

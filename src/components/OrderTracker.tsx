@@ -21,7 +21,7 @@ export function OrderTracker({ publicToken, initialOrder }: { publicToken: strin
     { title: finalLabel, icon: <PackageCheck size={18} /> },
   ];
   return <main className="customer-shell status-shell tracker-shell">
-    <section className="tracker-hero" aria-live="polite"><span className={`tracker-live ${connected ? "" : "connecting"}`}><i /> {connected ? "2초마다 자동 갱신" : "상태 연결 중"}{lastUpdatedAt && ` · ${lastUpdatedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</span><h1>#{order.order_number}</h1><div className="fulfillment-pill">{order.fulfillment_type === "TAKEOUT" ? <><ShoppingBag size={17} /> 포장 주문</> : <><UtensilsCrossed size={17} /> 테이블 {order.table_number}</>}</div><p>{publicOrderStatusMessage(order)}</p></section>
+    <section className="tracker-hero" aria-live="polite"><span className={`tracker-live ${connected ? "" : "connecting"}`}><i /> {connected ? "4초마다 자동 갱신" : "상태 연결 중"}{lastUpdatedAt && ` · ${lastUpdatedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</span><h1>#{order.order_number}</h1><div className="fulfillment-pill">{order.fulfillment_type === "TAKEOUT" ? <><ShoppingBag size={17} /> 포장 주문</> : <><UtensilsCrossed size={17} /> 테이블 {order.table_number}</>}</div><p>{publicOrderStatusMessage(order)}</p></section>
     <section className="tracker-progress">
       {stages.map((item, index) => <div className={index < step ? "done" : index === step ? "active" : ""} key={item.title}><span>{index < step ? <Check size={17} /> : item.icon}</span><strong>{item.title}</strong><small>{index === step ? "현재 단계" : index < step ? "완료" : "대기"}</small></div>)}
     </section>

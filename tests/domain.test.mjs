@@ -132,10 +132,11 @@ test("고객 주문 단계와 조리 안내 문구를 실제 상태에 맞게 �
   assert.match(publicOrderStatusMessage({ ...base, order_status: "READY", payment_status: "CONFIRMED" }), /준비가 끝났/);
 });
 
-test("고객 주문 현황은 2초 주기와 화면 복귀 시 즉시 동기화한다", async () => {
+test("고객 주문 현황은 4초 주기와 화면 복귀 시 즉시 동기화한다", async () => {
   const hook = await readFile(new URL("../src/features/orders/presentation/use-public-order-status.ts", import.meta.url), "utf8");
   const customer = await readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8");
-  assert.match(hook, /setInterval\(sync, 2000\)/);
+  assert.match(hook, /setInterval\(sync, 4000\)/);
+  assert.match(hook, /refreshInFlight/);
   assert.match(hook, /visibilitychange/);
   assert.match(hook, /addEventListener\("focus"/);
   assert.match(customer, /aria-live="polite"/);
@@ -156,7 +157,8 @@ test("관리자 세션은 갱신 토큰을 보관하고 만료 전에 연장한�
   assert.match(cookies, /festival_refresh_token/);
   assert.match(cookies, /httpOnly: true/);
   assert.match(session, /refreshSession\(\{ refresh_token: refreshToken \}\)/);
-  assert.match(session, /auth\.getUser\(accessToken\)/);
+  assert.match(session, /rpc\("is_festival_admin"\)/);
+  assert.doesNotMatch(session, /auth\.getUser\(accessToken\)/);
 });
 
 test("주요 화면 이동은 배포 환경에서도 동작하는 기본 링크를 사용한다", async () => {
@@ -217,4 +219,61 @@ test("테이블 QR 토큰은 Supabase 확장 스키마의 난수 함수를 사�
   assert.match(sql, /configure_festival_tables/i);
   assert.match(sql, /rotate_festival_table_qr/i);
   assert.match(sql, /public\.is_festival_admin\(\)/i);
+});
+
+test("주문 쓰기는 서버 HMAC 서명과 속도 제한을 통과해야 한다", async () => {
+  const migration = await readFile(new URL("../supabase/migrations/20260816040918_harden_orders_auth_and_dashboard.sql", import.meta.url), "utf8");
+  const gateway = await readFile(new URL("../src/features/orders/infrastructure/supabase-order-gateway.ts", import.meta.url), "utf8");
+  const signing = await readFile(new URL("../src/shared/security/request-signing.ts", import.meta.url), "utf8");
+  assert.match(migration, /verify_festival_signature/i);
+  assert.match(migration, /extensions\.hmac/i);
+  assert.match(migration, /consume_festival_rate_limit/i);
+  assert.match(migration, /too many unpaid orders/i);
+  assert.match(gateway, /p_rate_key_hash/);
+  assert.match(gateway, /p_request_timestamp/);
+  assert.match(gateway, /p_signature/);
+  assert.match(signing, /FESTIVAL_REQUEST_SIGNING_SECRET/);
+});
+
+test("미입금 주문은 10분 후 자동 취소되고 재고가 복구된다", async () => {
+  const migration = await readFile(new URL("../supabase/migrations/20260816040918_harden_orders_auth_and_dashboard.sql", import.meta.url), "utf8");
+  assert.match(migration, /interval '10 minutes'/i);
+  assert.match(migration, /expire_unpaid_festival_orders/i);
+  assert.match(migration, /AUTO_CANCEL_UNPAID/i);
+  assert.match(migration, /cron\.schedule/i);
+  assert.match(migration, /미입금 10분 자동 취소 재고 복구/);
+});
+
+test("관리자 대시보드는 10초 주기의 단일 스냅샷 RPC를 사용한다", async () => {
+  const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
+  const gateway = await readFile(new URL("../src/features/admin/infrastructure/supabase-admin-dashboard-gateway.ts", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../supabase/migrations/20260816040918_harden_orders_auth_and_dashboard.sql", import.meta.url), "utf8");
+  assert.match(dashboard, /setInterval\(sync, 10000\)/);
+  assert.match(dashboard, /refreshInFlight/);
+  assert.match(gateway, /rpc\("get_admin_dashboard_snapshot"\)/);
+  assert.doesNotMatch(gateway, /Promise\.all/);
+  assert.match(migration, /get_admin_dashboard_snapshot/i);
+  assert.match(migration, /security invoker/i);
+});
+
+test("관리자 비밀번호는 강도·유출 이력을 검사하고 로그인 시도를 제한한다", async () => {
+  const passwordSecurity = await readFile(new URL("../src/shared/security/password-security.ts", import.meta.url), "utf8");
+  const authGateway = await readFile(new URL("../src/features/auth/infrastructure/supabase-auth-gateway.ts", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../supabase/migrations/20260816040918_harden_orders_auth_and_dashboard.sql", import.meta.url), "utf8");
+  assert.match(passwordSecurity, /password\.length < 14/);
+  assert.match(passwordSecurity, /api\.pwnedpasswords\.com/);
+  assert.match(authGateway, /authorize_festival_login_attempt/);
+  assert.doesNotMatch(authGateway, /bootstrap_festival_admin[\s\S]*login\(/);
+  assert.match(migration, /'admin-login'[\s\S]*10, 900/);
+});
+
+test("운영 응답은 CSRF·클릭재킹·콘텐츠 유형 공격을 방어한다", async () => {
+  const middleware = await readFile(new URL("../proxy.ts", import.meta.url), "utf8");
+  const cookies = await readFile(new URL("../src/shared/auth/auth-cookies.ts", import.meta.url), "utf8");
+  assert.match(middleware, /Content-Security-Policy/);
+  assert.match(middleware, /X-Frame-Options/);
+  assert.match(middleware, /X-Content-Type-Options/);
+  assert.match(middleware, /origin !== request\.nextUrl\.origin/);
+  assert.match(cookies, /sameSite: "strict"/);
+  assert.match(cookies, /priority: "high"/);
 });

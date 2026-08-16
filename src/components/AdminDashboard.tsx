@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, ChevronLeft, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, Minus, Package, Pencil, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, ChevronLeft, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, LockKeyhole, Minus, Package, Pencil, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
 import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
@@ -62,6 +62,7 @@ export function AdminDashboard({
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const refreshInFlight = useRef(false);
 
   const applySnapshot = useCallback((snapshot: AdminSnapshot) => {
     setOrders(snapshot.orders);
@@ -80,6 +81,8 @@ export function AdminDashboard({
       if (!silent) setNotice("데모 데이터가 새로고침되었습니다.");
       return;
     }
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
     setSyncing(true);
     try {
       const response = await fetch("/api/admin/snapshot", { cache: "no-store" });
@@ -94,13 +97,14 @@ export function AdminDashboard({
       if (!silent) setNotice("운영 현황을 불러오지 못했습니다.");
     } finally {
       setSyncing(false);
+      refreshInFlight.current = false;
     }
   }, [applySnapshot, demoMode]);
 
   useEffect(() => {
     if (demoMode) return;
-    const sync = () => void refreshSnapshot(true);
-    const timer = window.setInterval(sync, 3000);
+    const sync = () => { if (document.visibilityState === "visible") void refreshSnapshot(true); };
+    const timer = window.setInterval(sync, 10000);
     window.addEventListener("focus", sync);
     const onVisibility = () => { if (document.visibilityState === "visible") sync(); };
     document.addEventListener("visibilitychange", onVisibility);
@@ -420,7 +424,45 @@ function SettingsView({ settings, onSave, onLogout }: { settings: StoreSettings;
       <label className={`store-open-toggle ${draft.isOpen ? "open" : ""}`}><span><strong>{draft.isOpen ? "주문 접수 중" : "주문 접수 중지"}</strong><small>{draft.isOpen ? "고객이 새 주문을 제출할 수 있습니다." : "메뉴는 보이지만 새 주문은 차단됩니다."}</small></span><input type="checkbox" aria-label="주문 접수 여부" checked={draft.isOpen} disabled={!readyToOpen && !draft.isOpen} onChange={(event) => setDraft({ ...draft, isOpen: event.target.checked })} /><i /></label>
       <div className="settings-actions"><button type="button" className="logout-button" onClick={() => void onLogout()}>관리자 로그아웃</button><button type="submit" disabled={saving || (draft.isOpen && !readyToOpen)}><Check size={16} /> {saving ? "저장 중" : "설정 저장"}</button></div>
     </form>
+    <PasswordSecurityCard />
   </section>;
+}
+
+function PasswordSecurityCard() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setMessage(null);
+    if (newPassword !== confirmation) { setMessage("새 비밀번호 확인이 일치하지 않습니다."); return; }
+    setSaving(true);
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const result = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) { setMessage(result?.message ?? "비밀번호를 변경하지 못했습니다."); return; }
+      setCurrentPassword(""); setNewPassword(""); setConfirmation("");
+      setMessage("새 비밀번호로 변경했고 다른 로그인 세션을 종료했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <form className="settings-card security-settings-card" onSubmit={submit}>
+    <div className="settings-heading"><div><small>ADMIN SECURITY</small><h2>관리자 비밀번호 보안</h2><p>유출 이력과 강도를 검사하고, 변경 후 다른 로그인 세션을 종료합니다.</p></div><LockKeyhole size={28} /></div>
+    <div className="settings-form-grid">
+      <label className="wide">현재 비밀번호<input required type="password" minLength={8} maxLength={200} autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+      <label>새 비밀번호<input required type="password" minLength={14} maxLength={200} autoComplete="new-password" placeholder="14자 이상 · 대소문자·숫자·특수문자" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+      <label>새 비밀번호 확인<input required type="password" minLength={14} maxLength={200} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+    </div>
+    {message && <p className="security-settings-message" role="status">{message}</p>}
+    <div className="settings-actions"><span /><button type="submit" disabled={saving}>{saving ? "보안 확인 중…" : "비밀번호 안전하게 변경"}</button></div>
+  </form>;
 }
 
 function OrderCard({ order, onAdvance, onCancel }: { order: DemoOrder; onAdvance: (id: string) => void; onCancel: (id: string) => void }) {

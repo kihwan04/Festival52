@@ -23,6 +23,10 @@ const eslintConfig = defineConfig([
   jsxA11y.flatConfigs.recommended,
   next.configs["core-web-vitals"],
   {
+    rules: {
+      // Vinext production navigation intentionally uses full-page anchors.
+      "@next/next/no-html-link-for-pages": "off",
+    },
     languageOptions: {
       globals: {
         ...globals.browser,

@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PublicOrder } from "@/src/features/orders/domain/order";
 
 export function usePublicOrderStatus(publicToken: string | null) {
   const [order, setOrder] = useState<PublicOrder | null>(null);
   const [connected, setConnected] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const refreshInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!publicToken) return null;
+    if (!publicToken || refreshInFlight.current) return null;
+    refreshInFlight.current = true;
     try {
       const response = await fetch(`/api/orders/${encodeURIComponent(publicToken)}`, { cache: "no-store" });
       if (!response.ok) throw new Error("order status unavailable");
@@ -21,14 +23,16 @@ export function usePublicOrderStatus(publicToken: string | null) {
     } catch {
       setConnected(false);
       return null;
+    } finally {
+      refreshInFlight.current = false;
     }
   }, [publicToken]);
 
   useEffect(() => {
     if (!publicToken) return;
-    const sync = () => void refresh();
+    const sync = () => { if (document.visibilityState === "visible") void refresh(); };
     const initialTimer = window.setTimeout(sync, 0);
-    const timer = window.setInterval(sync, 2000);
+    const timer = window.setInterval(sync, 4000);
     const onVisibility = () => { if (document.visibilityState === "visible") sync(); };
     window.addEventListener("focus", sync);
     document.addEventListener("visibilitychange", onVisibility);

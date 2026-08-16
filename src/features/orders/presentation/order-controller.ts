@@ -6,6 +6,7 @@ import { adminOrderActionSchema, createOrderSchema, transferClaimSchema } from "
 import { notFound, serviceUnavailable } from "@/src/shared/errors/app-error";
 import { requireAdminSession } from "@/src/shared/auth/admin-session";
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
+import { signOrderRequest } from "@/src/shared/security/request-signing";
 
 const uuidSchema = z.string().uuid();
 
@@ -18,7 +19,8 @@ function publicGateway() {
 export function createOrderController(request: Request) {
   return handleController(async () => {
     const command = await parseJson(request, createOrderSchema, "주문 내용을 다시 확인해 주세요.");
-    return { body: await createOrder(publicGateway(), command), status: 201 };
+    const security = await signOrderRequest(request, command);
+    return { body: await createOrder(publicGateway(), command, security), status: 201 };
   });
 }
 
