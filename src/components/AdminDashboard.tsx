@@ -552,7 +552,7 @@ function TablesView({ tables, onConfigure, onRotate }: { tables: FestivalTable[]
   return <>
     <section className="table-setup-card">
       <div><span className="setup-icon"><QrCode size={24} /></span><div><h2>테이블 QR 생성</h2><p>테이블 수를 입력하고 생성 버튼을 누르면 1번부터 서로 다른 주문 QR이 발급됩니다. 현재 {activeTables.length}개가 사용 중입니다.</p></div></div>
-      <form onSubmit={submit}><label>운영 테이블 수<input type="number" min="1" max="200" value={count} onChange={(event) => setCount(Math.min(200, Math.max(1, Number(event.target.value))))} /></label><button type="submit" disabled={saving}><Check size={17} /> {saving ? "생성 중…" : `QR ${count}개 생성·저장`}</button></form>
+      <form onSubmit={submit}><label>운영 테이블 수<input type="number" min="1" max="200" value={count} onChange={(event) => setCount(Math.min(200, Math.max(1, Number(event.target.value))))} /></label><button type="submit" disabled={saving}><Check size={17} /> {saving ? "생성 중…" : `${count}개 QR 생성`}</button></form>
     </section>
     <TakeoutQrCard />
     <div className="table-list-heading"><div><h2>발급된 테이블 QR</h2><p>각 QR은 해당 테이블 번호를 식별합니다. 출력 후 테이블에 부착해 주세요.</p></div><button type="button" onClick={() => window.print()}><QrCode size={16} /> 전체 QR 인쇄</button></div>

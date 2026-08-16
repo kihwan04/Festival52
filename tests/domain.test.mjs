@@ -210,7 +210,7 @@ test("테이블 QR 설정 응답은 서버의 camelCase 형식을 그대로 사�
   assert.match(dashboard, /payload = await response\.json[^\n]+FestivalTable\[\]/);
   assert.match(dashboard, /setTables\(payload\)/);
   assert.doesNotMatch(dashboard, /row\.table_number|row\.qr_token|row\.is_active/);
-  assert.match(dashboard, /QR \$\{count\}개 생성·저장/);
+  assert.match(dashboard, /\$\{count\}개 QR 생성/);
 });
 
 test("테이블 QR 토큰은 Supabase 확장 스키마의 난수 함수를 사용한다", async () => {
@@ -276,4 +276,14 @@ test("운영 응답은 CSRF·클릭재킹·콘텐츠 유형 공격을 방어한�
   assert.match(middleware, /origin !== request\.nextUrl\.origin/);
   assert.match(cookies, /sameSite: "strict"/);
   assert.match(cookies, /priority: "high"/);
+});
+
+test("좁은 관리자 화면에서 테이블 QR 생성 폼을 세로로 배치한다", async () => {
+  const [dashboard, styles] = await Promise.all([
+    readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(dashboard, /`\$\{count\}개 QR 생성`/);
+  assert.match(styles, /\.table-setup-card form button \{[^}]*white-space: nowrap/s);
+  assert.match(styles, /@media \(max-width: 520px\) \{[\s\S]*?\.table-setup-card form \{ flex-direction: column; \}/);
 });
