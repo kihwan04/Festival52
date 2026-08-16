@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getPublicSupabase } from "@/src/lib/supabase/server";
-import { authorizeLoginAttempt, changeAdminPassword, loginAdmin, setupFirstAdmin } from "@/src/features/auth/application/auth-service";
+import { authorizeLoginAttempt, changeAdminPassword, loginAdmin } from "@/src/features/auth/application/auth-service";
 import { SupabaseAuthGateway } from "@/src/features/auth/infrastructure/supabase-auth-gateway";
 import { adminSessionCookies, clearedAdminSessionCookies } from "@/src/shared/auth/auth-cookies";
 import { serviceUnavailable } from "@/src/shared/errors/app-error";
@@ -10,9 +10,6 @@ import { signLoginAttempt } from "@/src/shared/security/request-signing";
 import { requireAdminSession } from "@/src/shared/auth/admin-session";
 
 const loginSchema = z.object({ email: z.string().email().max(240), password: z.string().min(8).max(200) });
-const setupSchema = z.object({
-  email: z.string().email().max(240), password: z.string().min(14).max(200), displayName: z.string().trim().min(1).max(60),
-});
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(8).max(200),
   newPassword: z.string().min(14).max(200),
@@ -32,18 +29,6 @@ export function loginController(request: Request) {
     const result = await loginAdmin(gateway, command.email, command.password);
     if (!result.accessToken || !result.refreshToken) throw serviceUnavailable("로그인 세션을 만들지 못했습니다.");
     return { body: { ok: true }, cookies: adminSessionCookies(result.accessToken, result.refreshToken, result.expiresIn) };
-  });
-}
-
-export function setupController(request: Request) {
-  return handleController(async () => {
-    const command = await parseJson(request, setupSchema, "이름, 이메일과 14자 이상의 안전한 비밀번호를 확인해 주세요.");
-    await assertSecureAdminPassword(command.password, command.email);
-    const result = await setupFirstAdmin(authGateway(), command.email, command.password, command.displayName, `${new URL(request.url).origin}/admin`);
-    return {
-      body: { ok: true, confirmationRequired: result.confirmationRequired },
-      cookies: result.accessToken && result.refreshToken ? adminSessionCookies(result.accessToken, result.refreshToken, result.expiresIn) : [],
-    };
   });
 }
 

@@ -27,23 +27,6 @@ export class SupabaseAuthGateway implements AuthGateway {
     return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, expiresIn: data.session.expires_in, confirmationRequired: false };
   }
 
-  async setup(email: string, password: string, displayName: string, redirectTo: string): Promise<AuthSessionResult> {
-    const { data: available, error: availabilityError } = await this.publicClient.rpc("festival_admin_setup_available");
-    if (availabilityError || available !== true) throw conflict("첫 관리자 설정이 이미 완료되었습니다.");
-    const { data, error } = await this.publicClient.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName }, emailRedirectTo: redirectTo },
-    });
-    if (error || !data.user) throw conflict("계정을 만들지 못했습니다. 이메일이 이미 사용 중인지 확인해 주세요.");
-    if (!data.session) return { accessToken: null, refreshToken: null, expiresIn: 0, confirmationRequired: true };
-    const userClient = getUserSupabase(data.session.access_token);
-    if (!userClient) throw serviceUnavailable("관리자 등록을 완료하지 못했습니다.");
-    const { error: bootstrapError } = await userClient.rpc("bootstrap_festival_admin", { p_display_name: displayName });
-    if (bootstrapError) throw conflict("계정은 생성됐지만 관리자 등록을 완료하지 못했습니다.");
-    return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, expiresIn: data.session.expires_in, confirmationRequired: false };
-  }
-
   async changePassword(accessToken: string, currentPassword: string, newPassword: string): Promise<AuthSessionResult> {
     const currentClient = getUserSupabase(accessToken);
     if (!currentClient) throw serviceUnavailable("관리자 계정을 확인하지 못했습니다.");
