@@ -168,8 +168,9 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
         </div>
         <div className="fulfillment-switch" role="group" aria-label="수령 방법">
           <button type="button" className={fulfillment === "DINE_IN" ? "active" : ""} disabled={!canDineIn} onClick={() => setFulfillment("DINE_IN")}><UtensilsCrossed size={17} /> {canDineIn ? `${tableNumber}번 테이블` : "테이블"}</button>
-          <button type="button" className={fulfillment === "TAKEOUT" ? "active" : ""} onClick={() => setFulfillment("TAKEOUT")}><ShoppingBag size={17} /> 포장</button>
+          <button type="button" className={fulfillment === "TAKEOUT" ? "active" : ""} onClick={() => setFulfillment("TAKEOUT")}><ShoppingBag size={17} /> 포장 주문</button>
         </div>
+        {canDineIn && <p className="fulfillment-switch-guide"><ShoppingBag size={14} /> 테이블 QR에서도 포장 주문으로 바꿀 수 있어요.</p>}
       </header>
 
       <section className="menu-intro"><p>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장 주문"}</p><h1>오늘 뭐 먹을까요?</h1><span>{acceptingOrders ? "축제의 밤을 더 맛있게 즐겨보세요." : `${storeSettings.operatingHours} 운영 · 현재 새 주문을 준비하고 있어요.`}</span></section>

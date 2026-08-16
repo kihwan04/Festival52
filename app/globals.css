@@ -87,6 +87,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .fulfillment-switch { display: grid; grid-template-columns: 1fr 1fr; margin-top: 18px; }
 .fulfillment-switch button { display: flex; justify-content: center; align-items: center; gap: 7px; min-height: 48px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #9a958d; font-size: 13px; font-weight: 800; cursor: pointer; }
 .fulfillment-switch button.active { color: var(--ink); border-bottom-color: var(--brand); }.fulfillment-switch button:disabled { opacity: .4; cursor: not-allowed; }
+.fulfillment-switch-guide { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 9px 0 0; color: #6f756f; font-size: 11px; font-weight: 700; }
 .menu-intro { padding: 32px 20px 20px; }
 .menu-intro p { margin: 0 0 8px; color: var(--brand); font-size: 12px; font-weight: 900; }
 .menu-intro h1 { margin: 0; font-size: 28px; letter-spacing: -1.4px; }.menu-intro span { display: block; margin-top: 7px; color: var(--muted); font-size: 13px; }

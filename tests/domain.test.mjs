@@ -242,6 +242,19 @@ test("팀별 포장 주소와 주문 서명에 공개 팀 식별자를 포함한
   assert.match(schema, /teamSlug: z\.string\(\)\.regex/);
 });
 
+test("테이블 QR 고객도 같은 운영팀의 포장 주문으로 전환할 수 있다", async () => {
+  const [customer, tablePage, gateway] = await Promise.all([
+    readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/t/[qrToken]/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/orders/infrastructure/supabase-order-gateway.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(tablePage, /teamSlug=\{table\.teamSlug\}/);
+  assert.match(customer, /onClick=\{\(\) => setFulfillment\("TAKEOUT"\)\}/);
+  assert.match(customer, /qrToken: fulfillment === "DINE_IN" \? qrToken \?\? null : null/);
+  assert.match(customer, /테이블 QR에서도 포장 주문으로 바꿀 수 있어요/);
+  assert.match(gateway, /p_team_slug: command\.teamSlug/);
+});
+
 test("테이블 QR 설정 응답은 서버의 camelCase 형식을 그대로 사용한다", async () => {
   const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
   assert.match(dashboard, /payload = await response\.json[^\n]+FestivalTable\[\]/);
