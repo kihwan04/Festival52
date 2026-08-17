@@ -32,6 +32,11 @@ export function proxy(request: NextRequest) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  if (request.nextUrl.pathname === "/admin" || request.nextUrl.pathname.startsWith("/api/admin/") || request.nextUrl.pathname.startsWith("/api/auth/")) {
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
   if (request.nextUrl.protocol === "https:") response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   return response;
 }

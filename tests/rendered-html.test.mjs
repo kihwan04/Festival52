@@ -37,6 +37,7 @@ test("테이블 QR 메뉴에서 포장 주문 전환을 안내한다", async () 
   assert.match(html, /7번 테이블/);
   assert.match(html, /포장 주문/);
   assert.match(html, /테이블 QR에서도 포장 주문으로 바꿀 수 있어요/);
+  assert.doesNotMatch(html, /href="\/"|href="\/admin"/);
 });
 
 test("관리자 설정에서 메뉴와 테이블 QR 관리를 제공한다", async () => {

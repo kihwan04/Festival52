@@ -42,6 +42,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
   const totalQuantity = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
   const totalAmount = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const canDineIn = Boolean(tableNumber && qrToken);
+  const customerMenuHref = canDineIn ? `/t/${encodeURIComponent(qrToken ?? "")}` : `/s/${encodeURIComponent(teamSlug)}`;
   const acceptingOrders = storeSettings.isOpen && storeSettings.configured;
 
   const updateQuantity = (id: string, delta: number) => {
@@ -128,7 +129,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
     return (
       <main className="customer-shell status-shell">
         <header className="customer-topbar">
-          <a className="round-button" href="/" aria-label="처음으로"><ArrowLeft size={20} /></a>
+          <a className="round-button" href={customerMenuHref} aria-label="주문 메뉴로 돌아가기"><ArrowLeft size={20} /></a>
           <span className="topbar-title">주문 현황</span><span className="topbar-spacer" />
         </header>
         <section className="order-success" aria-live="polite">
@@ -163,7 +164,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
     <main className="customer-shell">
       <header className="customer-header">
         <div className="customer-head-row">
-          <a className="brand compact" href="/"><span className="brand-mark">52</span><span><strong>{storeSettings.stallName}</strong><small>FESTIVAL ORDER</small></span></a>
+          <div className="brand compact" aria-label={`${storeSettings.stallName} 주문 화면`}><span className="brand-mark">52</span><span><strong>{storeSettings.stallName}</strong><small>FESTIVAL ORDER</small></span></div>
           <span className={`open-chip ${acceptingOrders ? "" : "closed"}`}><i /> {acceptingOrders ? "주문 가능" : "주문 준비 중"}</span>
         </div>
         <div className="fulfillment-switch" role="group" aria-label="수령 방법">

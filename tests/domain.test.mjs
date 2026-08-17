@@ -196,6 +196,23 @@ test("관리자 일별 매출 집계는 서울 날짜와 확정 결제만 사용
   assert.match(sql, /security invoker/i);
 });
 
+test("관리자 매출은 날짜별 테이블 주문액과 입금 확정액을 분리해 표시한다", async () => {
+  const [dashboard, gateway, migration] = await Promise.all([
+    readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/admin/infrastructure/supabase-admin-dashboard-gateway.ts", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260817072333_add_daily_table_totals.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(dashboard, /테이블별 금액/);
+  assert.match(dashboard, /tableSale\.orderedAmount/);
+  assert.match(dashboard, /tableSale\.confirmedAmount/);
+  assert.match(gateway, /table_daily_sales/);
+  assert.match(migration, /o\.team_id = v_team_id/);
+  assert.match(migration, /p\.team_id = v_team_id/);
+  assert.match(migration, /security invoker/i);
+  assert.match(migration, /grant execute on function public\.get_admin_dashboard_snapshot\(\) to authenticated/i);
+  assert.match(migration, /revoke all on function public\.get_admin_dashboard_snapshot\(\) from public, anon, authenticated/i);
+});
+
 test("고객 주문 진입은 운영자가 발급한 테이블·포장 QR로 제공한다", async () => {
   const home = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
@@ -324,8 +341,18 @@ test("운영 응답은 CSRF·클릭재킹·콘텐츠 유형 공격을 방어한�
   assert.match(middleware, /X-Frame-Options/);
   assert.match(middleware, /X-Content-Type-Options/);
   assert.match(middleware, /origin !== request\.nextUrl\.origin/);
+  assert.match(middleware, /Cache-Control/);
+  assert.match(middleware, /X-Robots-Tag/);
   assert.match(cookies, /sameSite: "strict"/);
   assert.match(cookies, /priority: "high"/);
+});
+
+test("고객 QR 화면에서는 운영자 홈이나 로그인 화면으로 이동하는 링크를 노출하지 않는다", async () => {
+  const customer = await readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(customer, /href="\/"/);
+  assert.doesNotMatch(customer, /href=.*\/admin/);
+  assert.match(customer, /customerMenuHref/);
+  assert.match(customer, /aria-label="주문 메뉴로 돌아가기"/);
 });
 
 test("좁은 관리자 화면에서 테이블 QR 생성 폼을 세로로 배치한다", async () => {

@@ -14,6 +14,15 @@ export interface DailySalesSummary extends SalesSummary {
   date: string;
 }
 
+export interface DailyTableSalesSummary {
+  date: string;
+  tableNumber: number;
+  orderedAmount: number;
+  confirmedAmount: number;
+  orderCount: number;
+  confirmedOrders: number;
+}
+
 export interface TeamIdentity {
   departmentName: string;
   teamName: string;
@@ -61,5 +70,6 @@ export interface AdminSnapshot {
   settings: StoreSettings;
   sales: SalesSummary;
   dailySales: DailySalesSummary[];
+  tableDailySales: DailyTableSalesSummary[];
   syncedAt: string;
 }

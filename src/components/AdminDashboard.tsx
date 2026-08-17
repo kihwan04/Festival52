@@ -7,7 +7,7 @@ import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, 
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
 import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
-import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type SalesSummary, type TeamIdentity } from "@/src/features/admin/domain/admin-snapshot";
+import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type DailyTableSalesSummary, type SalesSummary, type TeamIdentity } from "@/src/features/admin/domain/admin-snapshot";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
@@ -33,6 +33,10 @@ const DEMO_SALES: SalesSummary = {
 };
 
 const DEMO_DAILY_SALES: DailySalesSummary[] = [{ date: getSeoulDateKey(), ...DEMO_SALES }];
+const DEMO_TABLE_DAILY_SALES: DailyTableSalesSummary[] = [
+  { date: getSeoulDateKey(), tableNumber: 3, orderedAmount: 14000, confirmedAmount: 14000, orderCount: 1, confirmedOrders: 1 },
+  { date: getSeoulDateKey(), tableNumber: 7, orderedAmount: 20000, confirmedAmount: 0, orderCount: 1, confirmedOrders: 0 },
+];
 
 const DEMO_SNAPSHOT: AdminSnapshot = {
   team: { departmentName: "컴퓨터공학과", teamName: "컴공 52 운영팀", publicSlug: "team-0000000000000000" },
@@ -43,6 +47,7 @@ const DEMO_SNAPSHOT: AdminSnapshot = {
   settings: DEMO_STORE_SETTINGS,
   sales: DEMO_SALES,
   dailySales: DEMO_DAILY_SALES,
+  tableDailySales: DEMO_TABLE_DAILY_SALES,
   syncedAt: new Date().toISOString(),
 };
 
@@ -60,6 +65,7 @@ export function AdminDashboard({
   const [team, setTeam] = useState<TeamIdentity>(initialSnapshot.team);
   const [sales, setSales] = useState<SalesSummary>(initialSnapshot.sales);
   const [dailySales, setDailySales] = useState<DailySalesSummary[]>(initialSnapshot.dailySales ?? []);
+  const [tableDailySales, setTableDailySales] = useState<DailyTableSalesSummary[]>(initialSnapshot.tableDailySales ?? []);
   const [syncedAt, setSyncedAt] = useState(initialSnapshot.syncedAt);
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
@@ -75,6 +81,7 @@ export function AdminDashboard({
     setSettings(snapshot.settings);
     setSales(snapshot.sales);
     setDailySales(snapshot.dailySales ?? []);
+    setTableDailySales(snapshot.tableDailySales ?? []);
     setSyncedAt(snapshot.syncedAt);
   }, []);
 
@@ -359,17 +366,24 @@ export function AdminDashboard({
           <section className="orders-grid" aria-label="주문 목록">
             {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>해당 주문을 모두 처리했어요</strong><span>새 주문이 들어오면 자동으로 표시됩니다.</span></div> : visibleOrders.map((order) => <OrderCard order={order} onAdvance={advance} onCancel={cancel} key={order.id} />)}
           </section>
-        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
+        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} tableDailySales={tableDailySales} tables={tables} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
       {notice && <div className="admin-toast"><Check size={17} /> {notice}</div>}
     </main>
   );
 }
 
-function SalesView({ totalSales, dailySales }: { totalSales: SalesSummary; dailySales: DailySalesSummary[] }) {
+function SalesView({ totalSales, dailySales, tableDailySales, tables }: { totalSales: SalesSummary; dailySales: DailySalesSummary[]; tableDailySales: DailyTableSalesSummary[]; tables: FestivalTable[] }) {
   const today = getSeoulDateKey();
   const [selectedDate, setSelectedDate] = useState(today);
   const sales = dailySales.find((item) => item.date === selectedDate) ?? emptySalesSummary();
+  const selectedDateRows = tableDailySales.filter((item) => item.date === selectedDate);
+  const selectedTableSales = Array.from(new Set([
+    ...tables.filter((table) => table.isActive).map((table) => table.tableNumber),
+    ...selectedDateRows.map((item) => item.tableNumber),
+  ])).sort((a, b) => a - b).map((tableNumber) => selectedDateRows.find((item) => item.tableNumber === tableNumber) ?? {
+    date: selectedDate, tableNumber, orderedAmount: 0, confirmedAmount: 0, orderCount: 0, confirmedOrders: 0,
+  });
   const selectedDateLabel = new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -398,6 +412,15 @@ function SalesView({ totalSales, dailySales }: { totalSales: SalesSummary; daily
       <article><small>테이블 주문</small><strong>{sales.dineInOrders}<em>건</em></strong></article>
       <article><small>포장 주문</small><strong>{sales.takeoutOrders}<em>건</em></strong></article>
     </div>
+    <section className="table-sales-panel">
+      <div className="table-sales-heading"><div><small>TABLE SALES</small><h3>테이블별 금액</h3><p>{selectedDateLabel} 주문 금액과 실제 입금 확인 금액입니다.</p></div><LayoutGrid size={24} /></div>
+      <div className="table-sales-grid">{selectedTableSales.map((tableSale) => <article className={tableSale.orderCount ? "has-orders" : ""} key={tableSale.tableNumber}>
+        <div><span>테이블 {tableSale.tableNumber}</span><em>{tableSale.orderCount}건</em></div>
+        <small>주문 금액</small><strong>{formatWon(tableSale.orderedAmount)}</strong>
+        <p><span>입금 확인 {tableSale.confirmedOrders}건</span><b>{formatWon(tableSale.confirmedAmount)}</b></p>
+      </article>)}</div>
+      {selectedTableSales.length === 0 && <div className="table-sales-empty">활성화된 테이블이 없습니다.</div>}
+    </section>
     <div className="sales-total-line"><span>전체 누적 확정 매출</span><strong>{formatWon(totalSales.totalRevenue)}</strong><em>{totalSales.confirmedOrders}건</em></div>
     <div className="sales-note"><WalletCards size={19} /><div><strong>현금·계좌이체 운영 기준</strong><p>고객의 “송금 완료” 표시만으로는 매출이 잡히지 않습니다. 실제 입금을 확인한 뒤 주문 관리에서 입금 확인을 눌러 주세요.</p></div></div>
   </section>;

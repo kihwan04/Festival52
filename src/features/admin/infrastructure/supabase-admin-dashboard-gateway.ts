@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { AdminDashboardGateway } from "@/src/features/admin/application/admin-dashboard-service";
-import { combineDailySales, type AdminSnapshot, type DailySalesSummary } from "@/src/features/admin/domain/admin-snapshot";
+import { combineDailySales, type AdminSnapshot, type DailySalesSummary, type DailyTableSalesSummary } from "@/src/features/admin/domain/admin-snapshot";
 import type { MenuCategory, MenuItem } from "@/src/features/menu/domain/menu";
 import type { DemoOrder, FestivalTable } from "@/src/shared/demo-data";
 import { conflict } from "@/src/shared/errors/app-error";
@@ -37,6 +37,10 @@ const snapshotSchema = z.object({
     sales_date: z.string(), total_revenue: z.union([z.number(), z.string()]), confirmed_orders: z.union([z.number(), z.string()]),
     dine_in_orders: z.union([z.number(), z.string()]), takeout_orders: z.union([z.number(), z.string()]), average_order_amount: z.union([z.number(), z.string()]),
   })),
+  table_daily_sales: z.array(z.object({
+    sales_date: z.string(), table_number: z.number().int().positive(), ordered_amount: z.union([z.number(), z.string()]),
+    confirmed_amount: z.union([z.number(), z.string()]), order_count: z.union([z.number(), z.string()]), confirmed_orders: z.union([z.number(), z.string()]),
+  })),
   synced_at: z.string(),
 });
 
@@ -45,6 +49,7 @@ type DbOrder = DbSnapshot["orders"][number];
 type DbMenu = DbSnapshot["menu"][number];
 type DbTable = DbSnapshot["tables"][number];
 type DbDailySale = DbSnapshot["daily_sales"][number];
+type DbDailyTableSale = DbSnapshot["table_daily_sales"][number];
 
 export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
   constructor(private readonly client: SupabaseClient) {}
@@ -77,6 +82,7 @@ export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
       },
       sales: combineDailySales(dailySales),
       dailySales,
+      tableDailySales: snapshot.table_daily_sales.map(mapDailyTableSale),
       syncedAt: snapshot.synced_at,
     };
   }
@@ -107,5 +113,16 @@ function mapDailySale(row: DbDailySale): DailySalesSummary {
     dineInOrders: Number(row.dine_in_orders),
     takeoutOrders: Number(row.takeout_orders),
     averageOrderAmount: Number(row.average_order_amount),
+  };
+}
+
+function mapDailyTableSale(row: DbDailyTableSale): DailyTableSalesSummary {
+  return {
+    date: row.sales_date,
+    tableNumber: row.table_number,
+    orderedAmount: Number(row.ordered_amount),
+    confirmedAmount: Number(row.confirmed_amount),
+    orderCount: Number(row.order_count),
+    confirmedOrders: Number(row.confirmed_orders),
   };
 }
