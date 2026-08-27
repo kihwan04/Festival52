@@ -45,13 +45,26 @@ export class SupabaseOrderGateway implements OrderGateway {
     return { ...parsed.data, table_number: parsed.data.table_number ?? null, expires_at: parsed.data.expires_at ?? null };
   }
 
-  async markTransferClaimed(publicToken: string): Promise<void> {
-    const { error } = await this.client.rpc("mark_transfer_claimed", { p_public_token: publicToken });
-    if (error) throw conflict("이미 처리됐거나 입금 요청이 불가능한 주문입니다.");
+  async markTransferClaimed(publicToken: string, security: CreateOrderSecurity): Promise<void> {
+    const { error } = await this.client.rpc("mark_transfer_claimed", {
+      p_public_token: publicToken,
+      p_rate_key_hash: security.rateKeyHash,
+      p_request_timestamp: security.requestTimestamp,
+      p_signature: security.signature,
+    });
+    if (!error) return;
+    if (error.message.toLowerCase().includes("rate limit")) throw rateLimited("입금 확인 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+    throw conflict("이미 처리됐거나 입금 요청이 불가능한 주문입니다.");
   }
 
-  async findPublicOrder(publicToken: string): Promise<PublicOrder | null> {
-    const { data, error } = await this.client.rpc("get_public_order", { p_public_token: publicToken });
+  async findPublicOrder(publicToken: string, security: CreateOrderSecurity): Promise<PublicOrder | null> {
+    const { data, error } = await this.client.rpc("get_public_order", {
+      p_public_token: publicToken,
+      p_rate_key_hash: security.rateKeyHash,
+      p_request_timestamp: security.requestTimestamp,
+      p_signature: security.signature,
+    });
+    if (error?.message.toLowerCase().includes("rate limit")) throw rateLimited("주문 상태 확인이 너무 잦습니다. 잠시 후 다시 시도해 주세요.");
     if (error) throw notFound("주문을 찾을 수 없습니다.");
     if (!data) return null;
     const parsed = publicOrderSchema.safeParse(data);

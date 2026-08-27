@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.FESTIVAL_DEMO_MODE = "true";
+process.env.NODE_ENV = "test";
+globalThis.__FESTIVAL_RENDER_TEST__ = true;
 
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -52,14 +54,15 @@ test("관리자 설정에서 메뉴와 테이블 QR 관리를 제공한다", asy
   assert.doesNotMatch(html, /매출 현황<\/button>[^<]*disabled/i);
 });
 
-test("운영 모드의 관리자 화면은 로그인과 학과별 운영팀 가입을 제공한다", async () => {
+test("운영 모드의 관리자 화면은 잠긴 로그인만 제공한다", async () => {
   process.env.FESTIVAL_DEMO_MODE = "false";
   try {
     const response = await render("/admin");
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, /운영자 로그인/);
-    assert.match(html, /회원가입/);
+    assert.doesNotMatch(html, /회원가입|내 운영팀 만들기/);
+    assert.match(html, /신규 가입은 잠겨/);
     assert.doesNotMatch(html, /FIRST ADMIN/);
   } finally {
     process.env.FESTIVAL_DEMO_MODE = "true";

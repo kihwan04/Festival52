@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { headers } from "next/headers";
+import { publicSiteOrigin } from "@/src/lib/supabase/server";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -8,11 +8,8 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
+export function generateMetadata(): Metadata {
+  const origin = publicSiteOrigin();
   return {
     metadataBase: new URL(origin),
     title: { default: "컴공 52 | QR 주문 운영", template: "%s | 컴공 52" },

@@ -14,6 +14,35 @@ type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
 type View = "orders" | "inventory" | "tables" | "sales" | "settings";
 type MenuDraft = Pick<MenuItem, "name" | "description" | "price" | "category" | "status" | "stockQuantity">;
 
+class AdminRequestError extends Error {
+  constructor(message: string, readonly status = 0) { super(message); }
+}
+
+async function adminRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: "no-store", ...init });
+  } catch {
+    throw new AdminRequestError("네트워크 연결을 확인해 주세요. 기존 화면은 유지됩니다.");
+  }
+  const payload = await response.json().catch(() => null) as T | { message?: string } | null;
+  if (response.status === 401 || response.status === 403) {
+    window.location.assign("/admin");
+    throw new AdminRequestError("로그인이 만료되었습니다. 다시 로그인해 주세요.", response.status);
+  }
+  if (!response.ok) {
+    const message = payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+      ? payload.message
+      : "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+    throw new AdminRequestError(message, response.status);
+  }
+  return payload as T;
+}
+
+function adminErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof AdminRequestError || error instanceof Error ? error.message : fallback;
+}
+
 const STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING_PAYMENT: "주문 확인 중", PAID: "주문 승인", COOKING: "조리 중", READY: "조리 완료", SERVED: "완료", CANCELLED: "취소",
 };
@@ -70,6 +99,7 @@ export function AdminDashboard({
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
   const refreshInFlight = useRef(false);
 
   const applySnapshot = useCallback((snapshot: AdminSnapshot) => {
@@ -95,16 +125,10 @@ export function AdminDashboard({
     refreshInFlight.current = true;
     setSyncing(true);
     try {
-      const response = await fetch("/api/admin/snapshot", { cache: "no-store" });
-      if (response.status === 401 || response.status === 403) {
-        window.location.assign("/admin");
-        return;
-      }
-      if (!response.ok) throw new Error("snapshot failed");
-      applySnapshot(await response.json() as AdminSnapshot);
+      applySnapshot(await adminRequest<AdminSnapshot>("/api/admin/snapshot"));
       if (!silent) setNotice("최신 운영 현황을 불러왔습니다.");
-    } catch {
-      if (!silent) setNotice("운영 현황을 불러오지 못했습니다.");
+    } catch (error) {
+      if (!silent) setNotice(adminErrorMessage(error, "운영 현황을 불러오지 못했습니다."));
     } finally {
       setSyncing(false);
       refreshInFlight.current = false;
@@ -125,6 +149,17 @@ export function AdminDashboard({
     };
   }, [demoMode, refreshSnapshot]);
 
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    update();
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+
   const showNotice = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(null), 2400);
@@ -144,9 +179,10 @@ export function AdminDashboard({
     if (!target || (target.orderStatus === "PENDING_PAYMENT" && target.paymentStatus !== "CUSTOMER_MARKED_TRANSFERRED")) return;
     const action = target.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED" ? "CONFIRM_PAYMENT" : target.orderStatus === "PAID" ? "START_COOKING" : target.orderStatus === "COOKING" ? "MARK_READY" : "MARK_SERVED";
     if (!demoMode) {
-      const response = await fetch(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
-      if (!response.ok) { showNotice("주문 상태를 바꾸지 못했습니다."); return; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "주문 상태를 바꾸지 못했습니다.")); return; }
     } else {
       setOrders((current) => current.map((order) => {
         if (order.id !== id) return order;
@@ -162,9 +198,10 @@ export function AdminDashboard({
     const target = orders.find((order) => order.id === id);
     if (!target || !window.confirm(`#${target.orderNumber} 주문을 취소할까요? 확보한 재고는 즉시 복구됩니다.`)) return;
     if (!demoMode) {
-      const response = await fetch(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "CANCEL" }) });
-      if (!response.ok) { showNotice("주문을 취소하지 못했습니다."); return; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "CANCEL" }) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "주문을 취소하지 못했습니다.")); return; }
     } else {
       setOrders((current) => current.map((order) => order.id === id ? { ...order, orderStatus: "CANCELLED" } : order));
     }
@@ -173,9 +210,10 @@ export function AdminDashboard({
 
   const adjustStock = async (id: string, quantityChange: number) => {
     if (!demoMode) {
-      const response = await fetch(`/api/admin/menu/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ quantityChange, reason: quantityChange > 0 ? "추가 입고" : "운영 조정" }) });
-      if (!response.ok) { showNotice("재고를 조정하지 못했습니다."); return; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest(`/api/admin/menu/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ quantityChange, reason: quantityChange > 0 ? "추가 입고" : "운영 조정" }) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "재고를 조정하지 못했습니다.")); return; }
     } else {
       setMenu((current) => current.map((item) => item.id === id ? {
         ...item,
@@ -188,13 +226,14 @@ export function AdminDashboard({
 
   const saveMenu = async (id: string | null, draft: MenuDraft): Promise<boolean> => {
     if (!demoMode) {
-      const response = await fetch(id ? `/api/admin/menu/${id}` : "/api/admin/menu", {
-        method: id ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(id ? { name: draft.name, description: draft.description, price: draft.price, category: draft.category, status: draft.status } : draft),
-      });
-      if (!response.ok) { showNotice((await response.json().catch(() => null) as { message?: string } | null)?.message ?? "메뉴를 저장하지 못했습니다."); return false; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest(id ? `/api/admin/menu/${id}` : "/api/admin/menu", {
+          method: id ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(id ? { name: draft.name, description: draft.description, price: draft.price, category: draft.category, status: draft.status } : draft),
+        });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "메뉴를 저장하지 못했습니다.")); return false; }
     } else if (id) {
       setMenu((current) => current.map((item) => item.id === id ? { ...item, ...draft } : item));
     } else {
@@ -208,9 +247,10 @@ export function AdminDashboard({
     const normalized = name.trim();
     if (!normalized || categories.includes(normalized)) return false;
     if (!demoMode) {
-      const response = await fetch("/api/admin/categories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: normalized }) });
-      if (!response.ok) { showNotice("카테고리를 추가하지 못했습니다."); return false; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest("/api/admin/categories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: normalized }) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "카테고리를 추가하지 못했습니다.")); return false; }
     } else setCategories((current) => [...current, normalized]);
     showNotice("카테고리가 추가되었습니다.");
     return true;
@@ -220,9 +260,10 @@ export function AdminDashboard({
     const normalized = nextName.trim();
     if (!normalized || normalized === previousName || categories.includes(normalized)) return false;
     if (!demoMode) {
-      const response = await fetch("/api/admin/categories", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ previousName, nextName: normalized }) });
-      if (!response.ok) { showNotice("카테고리 이름을 바꾸지 못했습니다."); return false; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest("/api/admin/categories", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ previousName, nextName: normalized }) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "카테고리 이름을 바꾸지 못했습니다.")); return false; }
     } else {
       setCategories((current) => current.map((item) => item === previousName ? normalized : item));
       setMenu((current) => current.map((item) => item.category === previousName ? { ...item, category: normalized } : item));
@@ -235,9 +276,10 @@ export function AdminDashboard({
     if (menu.some((item) => item.category === name && item.status !== "ARCHIVED")) { showNotice("사용 중인 카테고리는 삭제할 수 없습니다."); return false; }
     if (!window.confirm(`'${name}' 카테고리를 삭제할까요?`)) return false;
     if (!demoMode) {
-      const response = await fetch("/api/admin/categories", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
-      if (!response.ok) { showNotice("카테고리를 삭제하지 못했습니다."); return false; }
-      await refreshSnapshot(true);
+      try {
+        await adminRequest("/api/admin/categories", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "카테고리를 삭제하지 못했습니다.")); return false; }
     } else setCategories((current) => current.filter((item) => item !== name));
     showNotice("카테고리가 삭제되었습니다.");
     return true;
@@ -247,18 +289,11 @@ export function AdminDashboard({
     const currentCount = tables.filter((table) => table.isActive).length;
     if (count < currentCount && !window.confirm(`${currentCount - count}개 테이블을 비활성화할까요? 기존 주문 기록은 유지됩니다.`)) return false;
     if (!demoMode) {
-      const response = await fetch("/api/admin/tables", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ count }) });
-      if (response.status === 401 || response.status === 403) {
-        showNotice("로그인이 만료되었습니다. 다시 로그인해 주세요.");
-        window.setTimeout(() => window.location.assign("/admin"), 900);
-        return false;
-      }
-      const payload = await response.json().catch(() => null) as FestivalTable[] | { message?: string } | null;
-      if (!response.ok || !Array.isArray(payload)) {
-        showNotice(payload && !Array.isArray(payload) ? payload.message ?? "테이블을 설정하지 못했습니다." : "테이블을 설정하지 못했습니다.");
-        return false;
-      }
-      setTables(payload);
+      try {
+        const payload = await adminRequest<FestivalTable[]>("/api/admin/tables", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ count }) });
+        if (!Array.isArray(payload)) throw new AdminRequestError("테이블 설정 결과를 확인하지 못했습니다.");
+        setTables(payload);
+      } catch (error) { showNotice(adminErrorMessage(error, "테이블을 설정하지 못했습니다.")); return false; }
     } else {
       setTables((current) => Array.from({ length: Math.max(count, current.length) }, (_, index) => {
         const tableNumber = index + 1;
@@ -278,11 +313,12 @@ export function AdminDashboard({
   const rotateTableQr = async (table: FestivalTable) => {
     if (!window.confirm(`${table.tableNumber}번 테이블 QR을 재발급할까요? 기존 QR은 즉시 사용할 수 없게 됩니다.`)) return;
     if (!demoMode) {
-      const response = await fetch(`/api/admin/tables/${table.id}`, { method: "POST" });
-      if (!response.ok) { showNotice("QR을 재발급하지 못했습니다."); return; }
-      const payload = await response.json() as { qrToken: string };
-      setTables((current) => current.map((item) => item.id === table.id ? { ...item, qrToken: payload.qrToken } : item));
-      await refreshSnapshot(true);
+      try {
+        const payload = await adminRequest<{ qrToken: string }>(`/api/admin/tables/${table.id}`, { method: "POST" });
+        if (!payload.qrToken) throw new AdminRequestError("QR 발급 결과를 확인하지 못했습니다.");
+        setTables((current) => current.map((item) => item.id === table.id ? { ...item, qrToken: payload.qrToken } : item));
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "QR을 재발급하지 못했습니다.")); return; }
     } else {
       const token = `demo-table-${table.tableNumber}-qr-${crypto.randomUUID()}`;
       setTables((current) => current.map((item) => item.id === table.id ? { ...item, qrToken: token } : item));
@@ -307,25 +343,25 @@ export function AdminDashboard({
       showNotice("데모 매장 설정이 저장되었습니다.");
       return true;
     }
-    const response = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(draft),
-    });
-    const payload = await response.json().catch(() => null) as StoreSettings | { message?: string } | null;
-    if (!response.ok) {
-      showNotice(payload && "message" in payload ? payload.message ?? "매장 설정을 저장하지 못했습니다." : "매장 설정을 저장하지 못했습니다.");
-      return false;
-    }
-    setSettings(payload as StoreSettings);
-    await refreshSnapshot(true);
+    try {
+      const payload = await adminRequest<StoreSettings>("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      setSettings(payload);
+      await refreshSnapshot(true);
+    } catch (error) { showNotice(adminErrorMessage(error, "매장 설정을 저장하지 못했습니다.")); return false; }
     showNotice("매장 설정이 저장되었습니다.");
     return true;
   };
 
   const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.assign("/admin");
+    try {
+      await adminRequest("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.assign("/admin");
+    }
   };
 
   return (
@@ -368,6 +404,7 @@ export function AdminDashboard({
           </section>
         </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} tableDailySales={tableDailySales} tables={tables} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
+      {!online && <div className="admin-offline" role="alert"><AlertTriangle size={17} /> 네트워크 연결이 끊겼습니다. 기존 화면은 유지되며 연결 후 다시 동기화됩니다.</div>}
       {notice && <div className="admin-toast"><Check size={17} /> {notice}</div>}
     </main>
   );

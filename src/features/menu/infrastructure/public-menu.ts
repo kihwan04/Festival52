@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEMO_MENU } from "@/src/shared/demo-data";
 import type { MenuCategory, MenuItem } from "@/src/features/menu/domain/menu";
 import { getPublicSupabase, isDemoMode } from "@/src/lib/supabase/server";
+import { signLegacyTeamRequest, signPublicMenuRequest, signTableResolution } from "@/src/shared/security/request-signing";
 
 const publicMenuSchema = z.array(z.object({
   id: z.string().uuid(), name: z.string(), description: z.string(), price: z.number().int().nonnegative(),
@@ -14,9 +15,10 @@ export async function loadPublicMenu(teamSlug?: string): Promise<MenuItem[] | nu
   if (isDemoMode()) return DEMO_MENU;
   const supabase = getPublicSupabase();
   if (!supabase) return null;
+  const proof = await signPublicMenuRequest(teamSlug);
   const { data, error } = teamSlug
-    ? await supabase.rpc("get_public_menu", { p_team_slug: teamSlug })
-    : await supabase.rpc("get_public_menu");
+    ? await supabase.rpc("get_public_menu", { p_team_slug: teamSlug, p_request_timestamp: proof.requestTimestamp, p_signature: proof.signature })
+    : await supabase.rpc("get_public_menu", { p_request_timestamp: proof.requestTimestamp, p_signature: proof.signature });
   if (error) return null;
   const parsed = publicMenuSchema.safeParse(data);
   if (!parsed.success) return null;
@@ -38,7 +40,12 @@ export async function resolveTable(qrToken: string): Promise<{ id: string; table
   }
   const supabase = getPublicSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("resolve_festival_table", { p_qr_token: qrToken });
+  const proof = await signTableResolution(qrToken);
+  const { data, error } = await supabase.rpc("resolve_festival_table", {
+    p_qr_token: qrToken,
+    p_request_timestamp: proof.requestTimestamp,
+    p_signature: proof.signature,
+  });
   if (error) return null;
   const parsed = tableSchema.safeParse(data);
   return parsed.success ? { id: parsed.data.id, tableNumber: parsed.data.table_number, teamSlug: parsed.data.team_slug } : null;
@@ -48,6 +55,10 @@ export async function loadLegacyTeamSlug(): Promise<string | null> {
   if (isDemoMode()) return "team-0000000000000000";
   const supabase = getPublicSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("get_legacy_festival_team_slug");
+  const proof = await signLegacyTeamRequest();
+  const { data, error } = await supabase.rpc("get_legacy_festival_team_slug", {
+    p_request_timestamp: proof.requestTimestamp,
+    p_signature: proof.signature,
+  });
   return !error && typeof data === "string" && /^team-[a-f0-9]{16}$/.test(data) ? data : null;
 }

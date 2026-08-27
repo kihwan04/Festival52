@@ -274,7 +274,7 @@ test("테이블 QR 고객도 같은 운영팀의 포장 주문으로 전환할 �
 
 test("테이블 QR 설정 응답은 서버의 camelCase 형식을 그대로 사용한다", async () => {
   const dashboard = await readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8");
-  assert.match(dashboard, /payload = await response\.json[^\n]+FestivalTable\[\]/);
+  assert.match(dashboard, /payload = await adminRequest<FestivalTable\[\]>/);
   assert.match(dashboard, /setTables\(payload\)/);
   assert.doesNotMatch(dashboard, /row\.table_number|row\.qr_token|row\.is_active/);
   assert.match(dashboard, /\$\{count\}개 QR 생성/);
@@ -363,4 +363,66 @@ test("좁은 관리자 화면에서 테이블 QR 생성 폼을 세로로 배치�
   assert.match(dashboard, /`\$\{count\}개 QR 생성`/);
   assert.match(styles, /\.table-setup-card form button \{[^}]*white-space: nowrap/s);
   assert.match(styles, /@media \(max-width: 520px\) \{[\s\S]*?\.table-setup-card form \{ flex-direction: column; \}/);
+});
+
+test("최종 보강은 모든 운영 관계를 팀 복합키로 고정하고 로그아웃 세션을 즉시 거부한다", async () => {
+  const migration = await readFile(new URL("../supabase/migrations/20260827044958_harden_tenant_and_signed_public_rpcs.sql", import.meta.url), "utf8");
+  assert.match(migration, /foreign key \(team_id, table_id\)[\s\S]*festival_tables\(team_id, id\)/i);
+  assert.match(migration, /foreign key \(team_id, order_id\)[\s\S]*orders\(team_id, id\)/i);
+  assert.match(migration, /foreign key \(team_id, menu_item_id\)[\s\S]*menu_items\(team_id, id\)/i);
+  assert.match(migration, /references public\.festival_team_members\(team_id, user_id\)/i);
+  assert.match(migration, /from auth\.sessions session/i);
+  assert.match(migration, /auth\.jwt\(\)->>'session_id'/i);
+  assert.match(migration, /team\.is_active = true/i);
+});
+
+test("고객용 DB 호출은 서버 서명과 속도 제한 없이는 실행되지 않는다", async () => {
+  const [migration, cleanup, signing, orderGateway] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260827044958_harden_tenant_and_signed_public_rpcs.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260827045021_remove_unsigned_public_rpcs.sql", import.meta.url), "utf8"),
+    readFile(new URL("../src/shared/security/request-signing.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/orders/infrastructure/supabase-order-gateway.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(migration, /public-order-v1/);
+  assert.match(migration, /transfer-v1/);
+  assert.match(migration, /consume_festival_rate_limit\('public-order'/i);
+  assert.match(signing, /signPublicOrderRequest/);
+  assert.match(signing, /signTransferClaim/);
+  assert.match(orderGateway, /p_request_timestamp/);
+  assert.match(orderGateway, /p_signature/);
+  assert.match(cleanup, /drop function public\.get_public_order\(uuid\)/i);
+  assert.match(cleanup, /drop function public\.mark_transfer_claimed\(uuid\)/i);
+});
+
+test("운영자 가입·데모·리디렉션은 운영 환경에서 실패 안전하게 잠긴다", async () => {
+  const [server, auth, login, layout] = await Promise.all([
+    readFile(new URL("../src/lib/supabase/server.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/auth/presentation/auth-controller.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/AdminLogin.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(server, /NODE_ENV !== "production"[\s\S]*FESTIVAL_DEMO_MODE/);
+  assert.match(server, /FESTIVAL_ALLOW_SIGNUP === "true"/);
+  assert.match(auth, /if \(!isOperatorSignupEnabled\(\)\) throw forbidden/);
+  assert.match(auth, /signOut\(\{ scope: "local" \}\)/);
+  assert.match(login, /allowSignup = false/);
+  assert.doesNotMatch(layout, /x-forwarded-host|headers\(\)/);
+  assert.match(layout, /publicSiteOrigin\(\)/);
+});
+
+test("API는 JSON 유형·64KB 제한·비캐시 응답을 강제한다", async () => {
+  const source = await readFile(new URL("../src/shared/http/route-handler.ts", import.meta.url), "utf8");
+  assert.match(source, /MAX_JSON_BODY_BYTES = 64 \* 1024/);
+  assert.match(source, /mediaType !== "application\/json"/);
+  assert.match(source, /request\.body\.getReader\(\)/);
+  assert.match(source, /Cache-Control", "private, no-store/);
+  assert.match(source, /Retry-After/);
+});
+
+test("고객 주문 UI도 메뉴별 10개·전체 20개 한도를 선제 적용한다", async () => {
+  const source = await readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8");
+  assert.match(source, /currentTotal >= 20/);
+  assert.match(source, /Math\.min\(10, item\.stockQuantity/);
+  assert.match(source, /result\.total_amount/);
+  assert.match(source, /같은 주문을 다시 눌러도 중복 접수되지 않습니다/);
 });

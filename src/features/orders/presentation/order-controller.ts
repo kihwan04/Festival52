@@ -6,7 +6,7 @@ import { adminOrderActionSchema, createOrderSchema, transferClaimSchema } from "
 import { notFound, serviceUnavailable } from "@/src/shared/errors/app-error";
 import { requireAdminSession } from "@/src/shared/auth/admin-session";
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
-import { signOrderRequest } from "@/src/shared/security/request-signing";
+import { signOrderRequest, signPublicOrderRequest, signTransferClaim } from "@/src/shared/security/request-signing";
 
 const uuidSchema = z.string().uuid();
 
@@ -27,17 +27,17 @@ export function createOrderController(request: Request) {
 export function markTransferController(request: Request) {
   return handleController(async () => {
     const command = await parseJson(request, transferClaimSchema, "잘못된 주문 정보입니다.");
-    await markTransferClaimed(publicGateway(), command.publicToken);
+    await markTransferClaimed(publicGateway(), command.publicToken, await signTransferClaim(request, command.publicToken));
     return { body: { ok: true } };
   });
 }
 
-export function getPublicOrderController(_request: Request, context: { params: Promise<{ publicToken: string }> }) {
+export function getPublicOrderController(request: Request, context: { params: Promise<{ publicToken: string }> }) {
   return handleController(async () => {
     const { publicToken } = await context.params;
     const token = uuidSchema.safeParse(publicToken);
     if (!token.success) throw notFound("잘못된 주문 주소입니다.");
-    const order = await getPublicOrder(publicGateway(), token.data);
+    const order = await getPublicOrder(publicGateway(), token.data, await signPublicOrderRequest(request, token.data));
     if (!order) throw notFound("주문을 찾을 수 없습니다.");
     return { body: order };
   });

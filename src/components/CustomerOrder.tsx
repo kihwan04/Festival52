@@ -49,7 +49,9 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
     const item = menuItems.find((candidate) => candidate.id === id);
     if (!item) return;
     setCart((current) => {
-      const next = Math.max(0, Math.min(item.stockQuantity, (current[id] ?? 0) + delta));
+      const currentTotal = Object.values(current).reduce((sum, quantity) => sum + quantity, 0);
+      if (delta > 0 && currentTotal >= 20) return current;
+      const next = Math.max(0, Math.min(10, item.stockQuantity, (current[id] ?? 0) + delta));
       const result = { ...current, [id]: next };
       if (next === 0) delete result[id];
       return result;
@@ -78,15 +80,17 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ teamSlug, qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
       });
-      const result: unknown = await response.json();
+      const result: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "message" in result ? String(result.message) : "주문을 접수하지 못했습니다. 메뉴와 재고를 다시 확인해 주세요.");
-      if (typeof result !== "object" || result === null || !("order_number" in result) || !("public_token" in result)) throw new Error("주문 결과를 확인하지 못했습니다. 다시 시도해 주세요.");
+      if (typeof result !== "object" || result === null || !("order_number" in result) || !("public_token" in result) || !("total_amount" in result)) throw new Error("주문 결과를 확인하지 못했습니다. 다시 시도해 주세요.");
       const orderNumber = String(result.order_number);
-      setCreatedOrder({ orderNumber, publicToken: String(result.public_token), initialOrder: buildInitialOrder(orderNumber, fulfillment, tableNumber ?? null, totalAmount, cartItems) });
+      const confirmedTotal = Number(result.total_amount);
+      if (!Number.isSafeInteger(confirmedTotal) || confirmedTotal < 0) throw new Error("결제 금액을 확인하지 못했습니다. 운영 부스에 문의해 주세요.");
+      setCreatedOrder({ orderNumber, publicToken: String(result.public_token), initialOrder: buildInitialOrder(orderNumber, fulfillment, tableNumber ?? null, confirmedTotal, cartItems) });
       setCartOpen(false);
       setOrderComplete(true);
     } catch (error) {
-      setSubmissionError(error instanceof Error ? error.message : "주문을 접수하지 못했습니다.");
+      setSubmissionError(!navigator.onLine ? "네트워크 연결이 끊겼습니다. 연결 후 같은 주문을 다시 눌러도 중복 접수되지 않습니다." : error instanceof Error ? error.message : "주문을 접수하지 못했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -103,7 +107,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       setTransferClaimed(true);
       await refreshOrder();
     } catch (error) {
-      setTransferError(error instanceof Error ? error.message : "입금 확인 요청을 보내지 못했습니다.");
+      setTransferError(!navigator.onLine ? "네트워크 연결을 확인한 뒤 다시 눌러 주세요." : error instanceof Error ? error.message : "입금 확인 요청을 보내지 못했습니다.");
     } finally {
       setTransferSubmitting(false);
     }
@@ -141,7 +145,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
           <p className="success-copy">{displayOrder ? publicOrderStatusMessage(displayOrder) : "주문 상태를 불러오고 있어요."}</p>
         </section>
         {awaitingPayment && <section className="transfer-card">
-          <div className="transfer-head"><span>입금 계좌</span><strong>{formatWon(totalAmount)}</strong></div>
+          <div className="transfer-head"><span>입금 계좌</span><strong>{formatWon(displayOrder?.total_amount ?? createdOrder?.initialOrder.total_amount ?? totalAmount)}</strong></div>
           <div className="bank-account"><span>{storeSettings.bankName}</span><strong>{storeSettings.accountNumber}</strong><small>예금주 · {storeSettings.accountHolder}</small></div>
           <div className="payment-copy-actions">
             <button type="button" onClick={() => void copyPaymentValue(storeSettings.accountNumber, "계좌번호")}><Copy size={14} /> 계좌번호 복사</button>
@@ -182,13 +186,14 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
         {visibleMenu.map((item) => {
           const quantity = cart[item.id] ?? 0;
           const orderable = isOrderable(item);
+          const quantityLimitReached = quantity >= Math.min(10, item.stockQuantity) || totalQuantity >= 20;
           return (
             <article className={`menu-card ${!orderable ? "sold-out" : ""}`} key={item.id}>
               <div className={`food-visual food-${item.id}`}><span>{item.emoji}</span>{item.badge && <b>{item.badge}</b>}{!orderable && <em>품절</em>}</div>
               <div className="menu-card-body">
                 <div className="menu-title-row"><h2>{item.name}</h2><span className={item.stockQuantity <= 5 && orderable ? "stock-low" : "stock-label"}>{orderable ? `${item.stockQuantity}개 남음` : "오늘은 품절"}</span></div>
                 <p>{item.description}</p>
-                <div className="menu-card-bottom"><strong>{formatWon(item.price)}</strong>{quantity > 0 ? <div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={16} /></button><span>{quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} aria-label={`${item.name} 수량 늘리기`} disabled={quantity >= item.stockQuantity || !acceptingOrders}><Plus size={16} /></button></div> : <button className="add-button" type="button" onClick={() => updateQuantity(item.id, 1)} disabled={!orderable || !acceptingOrders} aria-label={`${item.name} 담기`}><Plus size={19} /></button>}</div>
+                <div className="menu-card-bottom"><strong>{formatWon(item.price)}</strong>{quantity > 0 ? <div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={16} /></button><span>{quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} aria-label={`${item.name} 수량 늘리기`} disabled={quantityLimitReached || !acceptingOrders}><Plus size={16} /></button></div> : <button className="add-button" type="button" onClick={() => updateQuantity(item.id, 1)} disabled={!orderable || !acceptingOrders || totalQuantity >= 20} aria-label={`${item.name} 담기`}><Plus size={19} /></button>}</div>
               </div>
             </article>
           );
@@ -200,7 +205,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
 
       {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">
         <div className="sheet-handle" /><div className="sheet-title"><div><small>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장"}</small><h2>주문을 확인해 주세요</h2></div><button className="round-button" type="button" onClick={() => setCartOpen(false)} aria-label="닫기"><X size={19} /></button></div>
-        <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.id}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{formatWon(item.price)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} disabled={item.quantity >= item.stockQuantity || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
+        <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.id}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{formatWon(item.price)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} disabled={item.quantity >= Math.min(10, item.stockQuantity) || totalQuantity >= 20 || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
         <div className="cart-summary"><span>총 {totalQuantity}개</span><strong>{formatWon(totalAmount)}</strong></div>
         {submissionError && <p className="submission-error">{submissionError}</p>}
         <button className="checkout-button" type="button" disabled={submitting || !acceptingOrders} onClick={placeOrder}>{submitting ? "재고 확인 중…" : acceptingOrders ? "계좌이체로 주문하기" : "현재 주문 준비 중"} {!submitting && acceptingOrders && <ChevronRight size={19} />}</button><p className="checkout-caption">주문 후 입금 계좌와 주문번호를 안내해 드려요.</p>

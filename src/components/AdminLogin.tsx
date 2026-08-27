@@ -5,7 +5,7 @@ import { ArrowLeft, Building2, LockKeyhole } from "lucide-react";
 
 type AuthMode = "login" | "signup";
 
-export function AdminLogin() {
+export function AdminLogin({ allowSignup = false }: { allowSignup?: boolean }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [departmentName, setDepartmentName] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -18,6 +18,7 @@ export function AdminLogin() {
   const [loading, setLoading] = useState(false);
 
   const switchMode = (next: AuthMode) => {
+    if (next === "signup" && !allowSignup) return;
     setMode(next);
     setError(null);
     setNotice(null);
@@ -65,10 +66,10 @@ export function AdminLogin() {
     <p className="login-copy">{signup
       ? "학과별로 독립된 메뉴·QR·주문·매출 공간을 만들어 드려요."
       : "자신의 운영팀 주문·입금·재고 정보만 안전하게 확인할 수 있어요."}</p>
-    <div className="login-tabs" role="tablist" aria-label="계정 메뉴">
+    {allowSignup && <div className="login-tabs" role="tablist" aria-label="계정 메뉴">
       <button type="button" role="tab" aria-selected={!signup} className={!signup ? "active" : ""} onClick={() => switchMode("login")}>로그인</button>
       <button type="button" role="tab" aria-selected={signup} className={signup ? "active" : ""} onClick={() => switchMode("signup")}>회원가입</button>
-    </div>
+    </div>}
     <form onSubmit={submit}>
       {signup && <div className="signup-fields">
         <label>학과명<input required minLength={2} maxLength={80} value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} placeholder="예: 컴퓨터공학과" autoComplete="organization" /></label>
@@ -85,6 +86,6 @@ export function AdminLogin() {
       {error && <p className="login-error" role="alert">{error}</p>}
       <button type="submit" disabled={loading}>{loading ? "확인 중…" : signup ? "내 운영팀 만들기" : "안전하게 로그인"}</button>
     </form>
-    <small>{signup ? "가입한 팀의 데이터는 다른 운영팀과 데이터베이스에서 분리됩니다." : "Supabase Auth와 팀별 서버 권한으로 보호됩니다."}</small>
+    <small>{signup ? "가입한 팀의 데이터는 다른 운영팀과 데이터베이스에서 분리됩니다." : "신규 가입은 잠겨 있으며 Supabase Auth와 팀별 서버 권한으로 보호됩니다."}</small>
   </section></main>;
 }

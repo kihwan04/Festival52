@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { StoreSettingsGateway, StoreSettingsUpdate } from "@/src/features/settings/application/store-settings-service";
 import type { StoreSettings } from "@/src/features/settings/domain/store-settings";
 import { conflict } from "@/src/shared/errors/app-error";
+import { signPublicSettingsRequest } from "@/src/shared/security/request-signing";
 
 const settingsSchema = z.object({
   stall_name: z.string(), bank_name: z.string(), account_number: z.string(), account_holder: z.string(),
@@ -13,9 +14,10 @@ export class SupabaseStoreSettingsGateway implements StoreSettingsGateway {
   constructor(private readonly client: SupabaseClient) {}
 
   async getPublic(teamSlug?: string): Promise<StoreSettings> {
+    const proof = await signPublicSettingsRequest(teamSlug);
     const { data, error } = teamSlug
-      ? await this.client.rpc("get_public_store_settings", { p_team_slug: teamSlug })
-      : await this.client.rpc("get_public_store_settings");
+      ? await this.client.rpc("get_public_store_settings", { p_team_slug: teamSlug, p_request_timestamp: proof.requestTimestamp, p_signature: proof.signature })
+      : await this.client.rpc("get_public_store_settings", { p_request_timestamp: proof.requestTimestamp, p_signature: proof.signature });
     if (error) throw conflict("매장 설정을 불러오지 못했습니다.");
     return mapSettings(data);
   }

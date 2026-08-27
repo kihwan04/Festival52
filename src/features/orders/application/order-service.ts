@@ -26,12 +26,12 @@ export interface CreateOrderSecurity {
 
 export interface OrderGateway {
   create(command: CreateOrderCommand, security: CreateOrderSecurity): Promise<CreatedOrder>;
-  markTransferClaimed(publicToken: string): Promise<void>;
-  findPublicOrder(publicToken: string): Promise<PublicOrder | null>;
+  markTransferClaimed(publicToken: string, security: CreateOrderSecurity): Promise<void>;
+  findPublicOrder(publicToken: string, security: CreateOrderSecurity): Promise<PublicOrder | null>;
   process(orderId: string, action: AdminOrderAction): Promise<void>;
 }
 
 export const createOrder = (gateway: OrderGateway, command: CreateOrderCommand, security: CreateOrderSecurity) => gateway.create(command, security);
-export const markTransferClaimed = (gateway: OrderGateway, publicToken: string) => gateway.markTransferClaimed(publicToken);
-export const getPublicOrder = (gateway: OrderGateway, publicToken: string) => gateway.findPublicOrder(publicToken);
+export const markTransferClaimed = (gateway: OrderGateway, publicToken: string, security: CreateOrderSecurity) => gateway.markTransferClaimed(publicToken, security);
+export const getPublicOrder = (gateway: OrderGateway, publicToken: string, security: CreateOrderSecurity) => gateway.findPublicOrder(publicToken, security);
 export const processAdminOrder = (gateway: OrderGateway, orderId: string, action: AdminOrderAction) => gateway.process(orderId, action);

@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { getPublicSupabase } from "@/src/lib/supabase/server";
+import { getPublicSupabase, isOperatorSignupEnabled, publicSiteOrigin } from "@/src/lib/supabase/server";
 import { authorizeLoginAttempt, authorizeSignupAttempt, changeAdminPassword, loginAdmin, signupOperator } from "@/src/features/auth/application/auth-service";
 import { SupabaseAuthGateway } from "@/src/features/auth/infrastructure/supabase-auth-gateway";
 import { adminSessionCookies, clearedAdminSessionCookies } from "@/src/shared/auth/auth-cookies";
-import { serviceUnavailable } from "@/src/shared/errors/app-error";
+import { forbidden, serviceUnavailable } from "@/src/shared/errors/app-error";
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
 import { assertSecureAdminPassword } from "@/src/shared/security/password-security";
 import { signLoginAttempt, signSignupAttempt, signSignupProvision } from "@/src/shared/security/request-signing";
@@ -45,6 +45,7 @@ export function loginController(request: Request) {
 
 export function signupController(request: Request) {
   return handleController(async () => {
+    if (!isOperatorSignupEnabled()) throw forbidden("운영자 가입이 잠겨 있습니다. 기존 운영자 계정으로 로그인해 주세요.");
     const command = await parseJson(request, signupSchema, "학과명, 운영팀명과 계정 정보를 확인해 주세요.");
     const gateway = authGateway();
     await authorizeSignupAttempt(gateway, await signSignupAttempt(request));
@@ -59,7 +60,7 @@ export function signupController(request: Request) {
     const result = await signupOperator(
       gateway,
       signupCommand,
-      new URL("/admin", request.url).toString(),
+      new URL("/admin", publicSiteOrigin()).toString(),
       await signSignupProvision(signupCommand),
     );
     if (result.confirmationRequired) {
@@ -90,8 +91,14 @@ export function changePasswordController(request: Request) {
 }
 
 export function logoutController() {
-  return handleController(async () => ({
-    body: { ok: true },
-    cookies: clearedAdminSessionCookies(),
-  }));
+  return handleController(async () => {
+    try {
+      const session = await requireAdminSession();
+      await session.client.auth.signOut({ scope: "local" });
+    } catch {
+      // Clearing both HttpOnly cookies is still required when the remote
+      // session has already expired or Auth is temporarily unavailable.
+    }
+    return { body: { ok: true }, cookies: clearedAdminSessionCookies() };
+  });
 }
