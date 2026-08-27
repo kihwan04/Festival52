@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, ChevronLeft, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, LockKeyhole, Minus, Package, Pencil, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, ChevronLeft, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, LockKeyhole, Minus, Package, Pencil, Phone, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
 import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
@@ -166,7 +166,7 @@ export function AdminDashboard({
   };
 
   const visibleOrders = useMemo(() => orders.filter((order) => {
-    if (search && !`${order.orderNumber} ${order.tableNumber ?? ""} ${order.items.map((item) => item.name).join(" ")}`.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !`${order.orderNumber} ${order.tableNumber ?? ""} ${order.customerName ?? ""} ${order.customerPhone ?? ""} ${order.items.map((item) => item.name).join(" ")}`.toLowerCase().includes(search.toLowerCase())) return false;
     if (filter === "DINE_IN" || filter === "TAKEOUT") return order.fulfillmentType === filter;
     if (filter === "PAYMENT") return order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED";
     if (filter === "COOKING") return order.orderStatus === "COOKING" || order.orderStatus === "PAID";
@@ -536,11 +536,16 @@ function OrderCard({ order, onAdvance, onCancel }: { order: DemoOrder; onAdvance
   const statusLabel = isPayment ? "입금 확인 중" : STATUS_LABEL[order.orderStatus];
   return <article className={`order-card status-${order.orderStatus.toLowerCase()}`}>
     <div className="order-card-head"><div><span className="order-number">#{order.orderNumber}</span><span className={`order-status status-${order.orderStatus.toLowerCase()}`}>{statusLabel}</span></div><span className="order-time"><Clock3 size={15} /> {order.orderedAt}</span></div>
-    <div className={`order-destination ${order.fulfillmentType === "TAKEOUT" ? "takeout" : ""}`}>{order.fulfillmentType === "DINE_IN" ? <><UtensilsCrossed size={19} /><strong>테이블 {order.tableNumber}</strong><span>매장 이용</span></> : <><ShoppingBag size={19} /><strong>포장 주문</strong><span>번호로 호출</span></>}</div>
+    <div className={`order-destination ${order.fulfillmentType === "TAKEOUT" ? "takeout" : ""}`}>{order.fulfillmentType === "DINE_IN" ? <><UtensilsCrossed size={19} /><strong>테이블 {order.tableNumber}</strong><span>매장 이용</span></> : <><ShoppingBag size={19} /><div className="takeout-contact-copy"><strong>{order.customerName ?? "포장 주문"}</strong><span>{order.customerPhone ? formatCustomerPhone(order.customerPhone) : "주문번호로 호출"}</span></div>{order.customerPhone && <a className="takeout-call" href={`tel:${order.customerPhone}`} aria-label={`${order.customerName ?? order.orderNumber} 고객에게 전화`}><Phone size={13} /> 전화</a>}</>}</div>
     <div className="order-items">{order.items.map((item) => <div key={item.name}><span>{item.name}</span><strong>× {item.quantity}</strong></div>)}</div>
     <div className="order-total"><span>총 결제금액</span><strong>{formatWon(order.totalAmount)}</strong></div>
     <div className="order-actions"><button className="cancel-order" type="button" onClick={() => onCancel(order.id)} aria-label={`${order.orderNumber} 주문 취소`}><X size={17} /></button><button className="primary-order-action" type="button" disabled={waitingForTransfer} onClick={() => onAdvance(order.id)}>{actionIcon}{actionLabel}</button></div>
   </article>;
+}
+
+function formatCustomerPhone(phone: string): string {
+  if (phone.length === 11) return `${phone.slice(0, 3)}-${phone.slice(3, 7)}-${phone.slice(7)}`;
+  return `${phone.slice(0, 3)}-${phone.slice(3, 6)}-${phone.slice(6)}`;
 }
 
 interface InventoryViewProps {

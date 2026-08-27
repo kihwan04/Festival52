@@ -5,6 +5,8 @@ export interface CreateOrderCommand {
   qrToken: string | null;
   fulfillmentType: FulfillmentType;
   clientRequestId: string;
+  customerName: string | null;
+  customerPhone: string | null;
   items: Array<{ menuItemId: string; quantity: number }>;
 }
 

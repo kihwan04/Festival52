@@ -11,6 +11,8 @@ interface OrderSignatureInput {
   qrToken: string | null;
   fulfillmentType: "DINE_IN" | "TAKEOUT";
   clientRequestId: string;
+  customerName: string | null;
+  customerPhone: string | null;
 }
 
 const encoder = new TextEncoder();
@@ -20,7 +22,7 @@ export async function signOrderRequest(request: Request, input: OrderSignatureIn
   const channel = input.fulfillmentType === "DINE_IN" ? input.qrToken ?? "INVALID_TABLE" : input.teamSlug;
   const rateKeyHash = await hmacHex(secret, `order-rate-v1|${trustedClientAddress(request)}|${channel}`);
   const requestTimestamp = Math.floor(Date.now() / 1000);
-  const message = `order-v2|${requestTimestamp}|${input.clientRequestId}|${input.teamSlug}|${input.fulfillmentType}|${input.qrToken ?? ""}|${rateKeyHash}`;
+  const message = `order-v3|${requestTimestamp}|${input.clientRequestId}|${input.teamSlug}|${input.fulfillmentType}|${input.qrToken ?? ""}|${input.customerName ?? ""}|${input.customerPhone ?? ""}|${rateKeyHash}`;
   return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
 }
 

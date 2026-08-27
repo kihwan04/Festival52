@@ -35,6 +35,8 @@ export class SupabaseOrderGateway implements OrderGateway {
       p_fulfillment_type: command.fulfillmentType,
       p_client_request_id: command.clientRequestId,
       p_items: command.items.map((item) => ({ menu_item_id: item.menuItemId, quantity: item.quantity })),
+      p_customer_name: command.customerName,
+      p_customer_phone: command.customerPhone,
       p_rate_key_hash: security.rateKeyHash,
       p_request_timestamp: security.requestTimestamp,
       p_signature: security.signature,
@@ -87,6 +89,7 @@ function mapCreateError(message: string) {
   if (normalized.includes("unavailable")) return conflict("현재 주문할 수 없는 메뉴가 포함되어 있습니다.");
   if (normalized.includes("rate limit") || normalized.includes("too many unpaid")) return rateLimited("주문 요청이 너무 많습니다. 기존 주문을 입금 처리하거나 잠시 후 다시 시도해 주세요.");
   if (normalized.includes("quantity limit") || normalized.includes("invalid quantity")) return conflict("한 주문은 메뉴별 10개, 전체 20개까지 가능합니다.");
+  if (normalized.includes("contact")) return conflict("포장 주문의 이름과 휴대폰 번호를 다시 확인해 주세요.");
   if (normalized.includes("signature") || normalized.includes("signing")) return conflict("주문 보안 확인에 실패했습니다. 화면을 새로고침해 주세요.");
   return conflict("주문을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
 }

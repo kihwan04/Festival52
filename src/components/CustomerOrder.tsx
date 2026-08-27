@@ -33,6 +33,8 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
   const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const clientRequestId = useRef<string | null>(null);
   const { order: syncedOrder, connected, lastUpdatedAt, refresh: refreshOrder } = usePublicOrderStatus(createdOrder?.publicToken ?? null);
 
@@ -64,6 +66,11 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       setSubmissionError("현재는 주문 접수 시간이 아닙니다.");
       return;
     }
+    const normalizedPhone = customerPhone.replace(/[^0-9]/g, "");
+    if (fulfillment === "TAKEOUT" && (!customerName.trim() || !/^01[016789][0-9]{7,8}$/.test(normalizedPhone))) {
+      setSubmissionError("포장 주문을 받을 분의 이름과 휴대폰 번호를 확인해 주세요.");
+      return;
+    }
     setSubmitting(true);
     try {
       if (demoMode) {
@@ -78,7 +85,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ teamSlug, qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
+        body: JSON.stringify({ teamSlug, qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, customerName: fulfillment === "TAKEOUT" ? customerName.trim() : null, customerPhone: fulfillment === "TAKEOUT" ? normalizedPhone : null, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
       });
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "message" in result ? String(result.message) : "주문을 접수하지 못했습니다. 메뉴와 재고를 다시 확인해 주세요.");
@@ -140,7 +147,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
           <div className="success-icon"><Check size={34} /></div>
           <p className="success-kicker">실시간 주문 현황</p>
           <h1>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</h1>
-          <div className="fulfillment-pill">{fulfillment === "TAKEOUT" ? <><ShoppingBag size={17} /> 포장 주문</> : <><UtensilsCrossed size={17} /> 테이블 {tableNumber ?? 7}</>}</div>
+          <div className="fulfillment-pill">{fulfillment === "TAKEOUT" ? <><ShoppingBag size={17} /> {customerName.trim()} · 포장 주문</> : <><UtensilsCrossed size={17} /> 테이블 {tableNumber ?? 7}</>}</div>
           <span className={`customer-live-chip ${connected || demoMode ? "connected" : ""}`}><i /> {connected || demoMode ? "4초마다 자동 갱신" : "상태 연결 중"}{lastUpdatedAt && ` · ${lastUpdatedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</span>
           <p className="success-copy">{displayOrder ? publicOrderStatusMessage(displayOrder) : "주문 상태를 불러오고 있어요."}</p>
         </section>
@@ -206,12 +213,25 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">
         <div className="sheet-handle" /><div className="sheet-title"><div><small>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장"}</small><h2>주문을 확인해 주세요</h2></div><button className="round-button" type="button" onClick={() => setCartOpen(false)} aria-label="닫기"><X size={19} /></button></div>
         <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.id}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{formatWon(item.price)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} disabled={item.quantity >= Math.min(10, item.stockQuantity) || totalQuantity >= 20 || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
+        {fulfillment === "TAKEOUT" && <div className="takeout-contact-form">
+          <div><strong>포장 수령자 정보</strong><small>음식이 준비되면 이름으로 불러드리고, 못 보신 경우에만 전화드려요.</small></div>
+          <label>이름<input type="text" value={customerName} maxLength={40} autoComplete="name" placeholder="예: 김민준" onChange={(event) => { setCustomerName(event.target.value); setSubmissionError(null); }} /></label>
+          <label>휴대폰 번호<input type="tel" inputMode="tel" value={customerPhone} maxLength={13} autoComplete="tel" placeholder="010-1234-5678" onChange={(event) => { setCustomerPhone(formatPhoneInput(event.target.value)); setSubmissionError(null); }} /></label>
+          <p>연락처는 운영자에게만 보이며 수령 완료·취소 시 자동 삭제됩니다.</p>
+        </div>}
         <div className="cart-summary"><span>총 {totalQuantity}개</span><strong>{formatWon(totalAmount)}</strong></div>
         {submissionError && <p className="submission-error">{submissionError}</p>}
         <button className="checkout-button" type="button" disabled={submitting || !acceptingOrders} onClick={placeOrder}>{submitting ? "재고 확인 중…" : acceptingOrders ? "계좌이체로 주문하기" : "현재 주문 준비 중"} {!submitting && acceptingOrders && <ChevronRight size={19} />}</button><p className="checkout-caption">주문 후 입금 계좌와 주문번호를 안내해 드려요.</p>
       </section></div>}
     </main>
   );
+}
+
+function formatPhoneInput(value: string): string {
+  const digits = value.replace(/[^0-9]/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
 function buildInitialOrder(orderNumber: string, fulfillmentType: FulfillmentType, currentTableNumber: number | null, totalAmount: number, items: Array<MenuItem & { quantity: number }>): PublicOrder {

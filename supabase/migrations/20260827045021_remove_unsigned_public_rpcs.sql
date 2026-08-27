@@ -11,6 +11,7 @@ revoke all on function public.get_legacy_festival_team_slug() from public, anon,
 revoke all on function public.get_public_order(uuid) from public, anon, authenticated;
 revoke all on function public.mark_transfer_claimed(uuid) from public, anon, authenticated;
 revoke all on function public.create_festival_order(text, text, uuid, jsonb, text, bigint, text) from public, anon, authenticated;
+revoke all on function public.create_festival_order(text, text, text, uuid, jsonb, text, bigint, text) from public, anon, authenticated;
 revoke all on function public.get_admin_sales_by_day() from public, anon, authenticated;
 
 drop function public.resolve_festival_table(text);
@@ -22,6 +23,7 @@ drop function public.get_legacy_festival_team_slug();
 drop function public.get_public_order(uuid);
 drop function public.mark_transfer_claimed(uuid);
 drop function public.create_festival_order(text, text, uuid, jsonb, text, bigint, text);
+drop function public.create_festival_order(text, text, text, uuid, jsonb, text, bigint, text);
 drop function public.get_admin_sales_by_day();
 
 create or replace function public.delete_menu_category(p_name text)

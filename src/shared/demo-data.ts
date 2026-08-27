@@ -12,15 +12,16 @@ export const DEMO_MENU: MenuItem[] = [
 
 export interface DemoOrder {
   id: string; orderNumber: string; fulfillmentType: FulfillmentType; tableNumber: number | null;
+  customerName: string | null; customerPhone: string | null;
   items: Array<{ name: string; quantity: number }>; totalAmount: number; orderStatus: OrderStatus;
   paymentStatus: PaymentStatus; orderedAt: string;
 }
 
 export const DEMO_ORDERS: DemoOrder[] = [
-  { id: "o-52", orderNumber: "A052", fulfillmentType: "DINE_IN", tableNumber: 7, items: [{ name: "화끈 제육볶음", quantity: 1 }, { name: "청포도 에이드", quantity: 2 }], totalAmount: 20000, orderStatus: "PENDING_PAYMENT", paymentStatus: "CUSTOMER_MARKED_TRANSFERRED", orderedAt: "방금 전" },
-  { id: "o-53", orderNumber: "P053", fulfillmentType: "TAKEOUT", tableNumber: null, items: [{ name: "바삭 닭강정", quantity: 2 }], totalAmount: 20000, orderStatus: "PAID", paymentStatus: "CONFIRMED", orderedAt: "3분 전" },
-  { id: "o-49", orderNumber: "A049", fulfillmentType: "DINE_IN", tableNumber: 3, items: [{ name: "치즈 떡볶이", quantity: 1 }, { name: "잔치 국수", quantity: 1 }], totalAmount: 14000, orderStatus: "COOKING", paymentStatus: "CONFIRMED", orderedAt: "8분 전" },
-  { id: "o-47", orderNumber: "P047", fulfillmentType: "TAKEOUT", tableNumber: null, items: [{ name: "화끈 제육볶음", quantity: 1 }], totalAmount: 12000, orderStatus: "READY", paymentStatus: "CONFIRMED", orderedAt: "12분 전" },
+  { id: "o-52", orderNumber: "A052", fulfillmentType: "DINE_IN", tableNumber: 7, customerName: null, customerPhone: null, items: [{ name: "화끈 제육볶음", quantity: 1 }, { name: "청포도 에이드", quantity: 2 }], totalAmount: 20000, orderStatus: "PENDING_PAYMENT", paymentStatus: "CUSTOMER_MARKED_TRANSFERRED", orderedAt: "방금 전" },
+  { id: "o-53", orderNumber: "P053", fulfillmentType: "TAKEOUT", tableNumber: null, customerName: "김민준", customerPhone: "01012345678", items: [{ name: "바삭 닭강정", quantity: 2 }], totalAmount: 20000, orderStatus: "PAID", paymentStatus: "CONFIRMED", orderedAt: "3분 전" },
+  { id: "o-49", orderNumber: "A049", fulfillmentType: "DINE_IN", tableNumber: 3, customerName: null, customerPhone: null, items: [{ name: "치즈 떡볶이", quantity: 1 }, { name: "잔치 국수", quantity: 1 }], totalAmount: 14000, orderStatus: "COOKING", paymentStatus: "CONFIRMED", orderedAt: "8분 전" },
+  { id: "o-47", orderNumber: "P047", fulfillmentType: "TAKEOUT", tableNumber: null, customerName: "이서연", customerPhone: "01098765432", items: [{ name: "화끈 제육볶음", quantity: 1 }], totalAmount: 12000, orderStatus: "READY", paymentStatus: "CONFIRMED", orderedAt: "12분 전" },
 ];
 
 export interface FestivalTable {

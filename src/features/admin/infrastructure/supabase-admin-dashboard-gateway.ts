@@ -17,6 +17,8 @@ const snapshotSchema = z.object({
     order_number: z.string(),
     fulfillment_type: z.enum(["DINE_IN", "TAKEOUT"]),
     table_number: z.number().int().positive().nullable(),
+    customer_name: z.string().min(1).max(40).nullable(),
+    customer_phone: z.string().regex(/^01[016789][0-9]{7,8}$/).nullable(),
     total_amount: z.number().int().nonnegative(),
     status: z.enum(["PENDING_PAYMENT", "PAID", "COOKING", "READY", "SERVED", "CANCELLED"]),
     payment_status: z.enum(["UNPAID", "CUSTOMER_MARKED_TRANSFERRED", "CONFIRMED", "REJECTED"]),
@@ -55,7 +57,7 @@ export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
   constructor(private readonly client: SupabaseClient) {}
 
   async load(): Promise<AdminSnapshot> {
-    const { data, error } = await this.client.rpc("get_admin_dashboard_snapshot");
+    const { data, error } = await this.client.rpc("get_admin_dashboard_snapshot_v2");
     if (error) throw conflict("운영 현황을 불러오지 못했습니다.");
     const parsed = snapshotSchema.safeParse(data);
     if (!parsed.success) throw conflict("운영 현황 응답을 확인하지 못했습니다.");
@@ -92,6 +94,7 @@ function relativeTime(createdAt: string): string { const minutes = Math.max(0, M
 
 function mapOrder(row: DbOrder): DemoOrder {
   return { id: row.id, orderNumber: row.order_number, fulfillmentType: row.fulfillment_type, tableNumber: row.table_number,
+    customerName: row.customer_name, customerPhone: row.customer_phone,
     items: row.items.map((item) => ({ name: item.menu_name, quantity: item.quantity })), totalAmount: row.total_amount,
     orderStatus: row.status, paymentStatus: row.payment_status, orderedAt: relativeTime(row.created_at) };
 }

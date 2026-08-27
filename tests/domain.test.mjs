@@ -13,6 +13,7 @@ import {
 } from "../src/features/orders/domain/order.ts";
 import { isStoreConfigured } from "../src/features/settings/domain/store-settings.ts";
 import { combineDailySales, getSeoulDateKey, shiftDateKey } from "../src/features/admin/domain/admin-snapshot.ts";
+import { createOrderSchema } from "../src/features/orders/presentation/schemas.ts";
 
 const menu = [
   { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3 },
@@ -255,7 +256,7 @@ test("팀별 포장 주소와 주문 서명에 공개 팀 식별자를 포함한
   ]);
   assert.match(dashboard, /\/s\/\$\{encodeURIComponent\(team\.publicSlug\)\}/);
   assert.match(customer, /JSON\.stringify\(\{ teamSlug,/);
-  assert.match(signing, /order-v2/);
+  assert.match(signing, /order-v3/);
   assert.match(schema, /teamSlug: z\.string\(\)\.regex/);
 });
 
@@ -317,7 +318,7 @@ test("관리자 대시보드는 10초 주기의 단일 스냅샷 RPC를 사용�
   const migration = await readFile(new URL("../supabase/migrations/20260816040918_harden_orders_auth_and_dashboard.sql", import.meta.url), "utf8");
   assert.match(dashboard, /setInterval\(sync, 10000\)/);
   assert.match(dashboard, /refreshInFlight/);
-  assert.match(gateway, /rpc\("get_admin_dashboard_snapshot"\)/);
+  assert.match(gateway, /rpc\("get_admin_dashboard_snapshot_v2"\)/);
   assert.doesNotMatch(gateway, /Promise\.all/);
   assert.match(migration, /get_admin_dashboard_snapshot/i);
   assert.match(migration, /security invoker/i);
@@ -425,4 +426,54 @@ test("고객 주문 UI도 메뉴별 10개·전체 20개 한도를 선제 적용�
   assert.match(source, /Math\.min\(10, item\.stockQuantity/);
   assert.match(source, /result\.total_amount/);
   assert.match(source, /같은 주문을 다시 눌러도 중복 접수되지 않습니다/);
+});
+
+test("동시 QR 주문은 주문별 UUID와 재고 행 잠금 순서로 서로 섞이지 않는다", async () => {
+  const [baseMigration, teamMigration, indexMigration] = await Promise.all([
+    readFile(new URL("../supabase/migrations/202608140001_festival_qr.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260816050322_add_multi_team_signup.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260827052906_index_tenant_foreign_keys.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(baseMigration, /client_request_id uuid not null unique/i);
+  assert.match(teamMigration, /where client_request_id = p_client_request_id[\s\S]*team_id = v_team_id/i);
+  assert.match(teamMigration, /jsonb_array_elements\(p_items\) order by value->>'menu_item_id'[\s\S]*for update/i);
+  assert.match(teamMigration, /exception when unique_violation[\s\S]*'duplicate', true/i);
+  assert.match(teamMigration, /nextval\('public\.festival_order_number_seq'\)/i);
+  assert.match(indexMigration, /orders_team_table_idx[\s\S]*orders\(team_id, table_id\)/i);
+  assert.match(indexMigration, /payments_team_order_idx[\s\S]*payments\(team_id, order_id\)/i);
+  assert.match(indexMigration, /order_items_team_menu_idx[\s\S]*order_items\(team_id, menu_item_id\)/i);
+});
+
+test("포장 주문은 이름·휴대폰을 검증하고 완료 시 연락처를 자동 삭제한다", async () => {
+  const valid = createOrderSchema.parse({
+    teamSlug: "team-0123456789abcdef",
+    qrToken: null,
+    fulfillmentType: "TAKEOUT",
+    clientRequestId: "123e4567-e89b-42d3-a456-426614174000",
+    customerName: " 김민준 ",
+    customerPhone: "010-1234-5678",
+    items: [{ menuItemId: "123e4567-e89b-42d3-a456-426614174001", quantity: 1 }],
+  });
+  assert.equal(valid.customerName, "김민준");
+  assert.equal(valid.customerPhone, "01012345678");
+  assert.equal(createOrderSchema.safeParse({ ...valid, customerName: null }).success, false);
+  assert.equal(createOrderSchema.safeParse({ ...valid, customerPhone: "010-12" }).success, false);
+
+  const [migration, customer, dashboard, gateway] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260827051859_add_takeout_contact_details.sql", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/AdminDashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/orders/infrastructure/supabase-order-gateway.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(migration, /add column if not exists customer_name text/i);
+  assert.match(migration, /orders_takeout_contact_check/i);
+  assert.match(migration, /order-v3/i);
+  assert.match(migration, /clear_finished_order_contact/i);
+  assert.match(migration, /new\.status in \('SERVED', 'CANCELLED'\)/i);
+  assert.match(migration, /get_admin_dashboard_snapshot_v2/i);
+  assert.match(customer, /포장 수령자 정보/);
+  assert.match(customer, /수령 완료·취소 시 자동 삭제/);
+  assert.match(dashboard, /href=\{`tel:\$\{order\.customerPhone\}`\}/);
+  assert.match(gateway, /p_customer_name: command\.customerName/);
+  assert.match(gateway, /p_customer_phone: command\.customerPhone/);
 });
