@@ -6,6 +6,7 @@ import { DEMO_MENU } from "@/src/shared/demo-data";
 import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
 import { publicOrderProgressStep, publicOrderStatusMessage, type FulfillmentType, type PublicOrder } from "@/src/features/orders/domain/order";
 import { usePublicOrderStatus } from "@/src/features/orders/presentation/use-public-order-status";
+import { PushNotificationOptIn } from "@/src/components/PushNotificationOptIn";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 interface CustomerOrderProps {
@@ -162,6 +163,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
           <p>입금자명 <strong>{createdOrder?.orderNumber ?? (fulfillment === "TAKEOUT" ? "P053" : "A052")}</strong>로 보내주세요. 미입금 상태가 10분간 계속되면 주문과 확보 재고가 자동으로 취소됩니다.</p>
         </section>}
         {displayOrder && <LiveOrderProgress order={displayOrder} />}
+        {createdOrder?.publicToken && displayOrder && <PushNotificationOptIn publicToken={createdOrder.publicToken} orderStatus={displayOrder.order_status} trackingHref={`/order/${createdOrder.publicToken}`} />}
         {createdOrder?.publicToken && <a className="public-order-link" href={`/order/${createdOrder.publicToken}`}>새로고침 가능한 주문 현황 열기 <ChevronRight size={16} /></a>}
         {awaitingPayment && <div className="sticky-order-action">
           <button className="checkout-button" type="button" disabled={paymentClaimed || transferSubmitting} onClick={claimTransfer}>{paymentClaimed ? <><Check size={20} /> 입금 확인을 요청했어요</> : transferSubmitting ? "확인 요청 보내는 중…" : "입금했어요"}</button>

@@ -7,6 +7,7 @@ import { notFound, serviceUnavailable } from "@/src/shared/errors/app-error";
 import { requireAdminSession } from "@/src/shared/auth/admin-session";
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
 import { signOrderRequest, signPublicOrderRequest, signTransferClaim } from "@/src/shared/security/request-signing";
+import { notifyReadyPushBestEffort } from "@/src/features/push/presentation/push-controller";
 
 const uuidSchema = z.string().uuid();
 
@@ -53,6 +54,9 @@ export function processAdminOrderController(request: Request, context: { params:
     const orderId = uuidSchema.safeParse(params.orderId);
     if (!orderId.success) throw notFound("잘못된 주문입니다.");
     await processAdminOrder(new SupabaseOrderGateway(session.client), orderId.data, command.action);
-    return { body: { ok: true } };
+    const push = command.action === "MARK_READY"
+      ? await notifyReadyPushBestEffort(session.client, orderId.data)
+      : undefined;
+    return { body: { ok: true, ...(push ? { push } : {}) } };
   });
 }

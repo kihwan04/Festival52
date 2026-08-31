@@ -14,6 +14,7 @@ import {
 import { isStoreConfigured } from "../src/features/settings/domain/store-settings.ts";
 import { combineDailySales, getSeoulDateKey, shiftDateKey } from "../src/features/admin/domain/admin-snapshot.ts";
 import { createOrderSchema } from "../src/features/orders/presentation/schemas.ts";
+import { normalizeAllowedPushEndpoint } from "../src/features/push/domain/push-subscription.ts";
 
 const menu = [
   { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3 },
@@ -476,4 +477,57 @@ test("포장 주문은 이름·휴대폰을 검증하고 완료 시 연락처를
   assert.match(dashboard, /href=\{`tel:\$\{order\.customerPhone\}`\}/);
   assert.match(gateway, /p_customer_name: command\.customerName/);
   assert.match(gateway, /p_customer_phone: command\.customerPhone/);
+});
+
+test("푸시 구독 주소는 알려진 브라우저 푸시 서버만 허용한다", () => {
+  assert.equal(normalizeAllowedPushEndpoint("https://fcm.googleapis.com/fcm/send/device-token"), "https://fcm.googleapis.com/fcm/send/device-token");
+  assert.equal(normalizeAllowedPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/device-token"), "https://updates.push.services.mozilla.com/wpush/v2/device-token");
+  assert.equal(normalizeAllowedPushEndpoint("https://web.push.apple.com/Q/device-token"), "https://web.push.apple.com/Q/device-token");
+  assert.equal(normalizeAllowedPushEndpoint("https://wns2-se1p.notify.windows.com/w/?token=device-token"), "https://wns2-se1p.notify.windows.com/w/?token=device-token");
+  assert.equal(normalizeAllowedPushEndpoint("https://127.0.0.1/private"), null);
+  assert.equal(normalizeAllowedPushEndpoint("https://fcm.googleapis.com.evil.example/push"), null);
+  assert.equal(normalizeAllowedPushEndpoint("https://fcm.googleapis.com@evil.example/push"), null);
+  assert.equal(normalizeAllowedPushEndpoint("http://fcm.googleapis.com/push"), null);
+});
+
+test("Web Push는 주문·팀 격리, 서명, 속도 제한, 자동 삭제를 DB에서 강제한다", async () => {
+  const [migration, denyPolicy, signing, sender, serviceWorker, packageJson] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260831140256_add_web_push_notifications.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260831142256_add_explicit_push_deny_policy.sql", import.meta.url), "utf8"),
+    readFile(new URL("../src/shared/security/request-signing.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/push/infrastructure/web-push-sender.ts", import.meta.url), "utf8"),
+    readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ]);
+  assert.match(migration, /foreign key \(team_id, order_id\)[\s\S]*orders\(team_id, id\)/i);
+  assert.match(migration, /enable row level security/i);
+  assert.match(migration, /revoke all on table public\.order_push_subscriptions from public, anon, authenticated/i);
+  assert.match(denyPolicy, /for all[\s\S]*to anon, authenticated[\s\S]*using \(false\)[\s\S]*with check \(false\)/i);
+  assert.match(migration, /verify_festival_signature[\s\S]*push-subscribe-v1/i);
+  assert.match(migration, /consume_festival_rate_limit\('push-subscribe'/i);
+  assert.match(migration, /status not in \('PENDING_PAYMENT', 'PAID', 'COOKING'\)/i);
+  assert.match(migration, /new\.status in \('SERVED', 'CANCELLED'\)[\s\S]*delete from public\.order_push_subscriptions/i);
+  assert.match(signing, /signPushSubscription/);
+  assert.match(signing, /sha256Hex\(subscription\.endpoint\)/);
+  assert.match(sender, /sendPushBatch/);
+  assert.match(sender, /topicFromString/);
+  assert.match(serviceWorker, /safeOrderPath/);
+  assert.match(serviceWorker, /caches nothing/i);
+  assert.match(packageJson, /"@mmmike\/web-push": "1\.3\.0"/);
+  assert.doesNotMatch(packageJson, /@block65\/webcrypto-web-push/);
+});
+
+test("고객이 직접 눌러 알림을 허용하고 아이폰 홈 화면 설치를 안내한다", async () => {
+  const [component, tracker, customer, layout] = await Promise.all([
+    readFile(new URL("../src/components/PushNotificationOptIn.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/OrderTracker.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/CustomerOrder.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(component, /onClick=\{handleButton\}/);
+  assert.match(component, /공유 → 홈 화면에 추가/);
+  assert.match(component, /serializeSubscription/);
+  assert.match(tracker, /PushNotificationOptIn/);
+  assert.match(customer, /PushNotificationOptIn/);
+  assert.match(layout, /manifest\.webmanifest/);
 });

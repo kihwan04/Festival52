@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="컴공 52">
+  <rect width="512" height="512" rx="118" fill="#192330"/>
+  <path d="M88 118c0-28 22-50 50-50h236c28 0 50 22 50 50v236c0 28-22 50-50 50H138c-28 0-50-22-50-50z" fill="#f25a32" transform="rotate(-3 256 256)"/>
+  <text x="256" y="323" fill="#fffdfa" font-family="Arial,sans-serif" font-size="202" font-weight="900" text-anchor="middle">52</text>
+</svg>

@@ -13,6 +13,7 @@ import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings
 type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
 type View = "orders" | "inventory" | "tables" | "sales" | "settings";
 type MenuDraft = Pick<MenuItem, "name" | "description" | "price" | "category" | "status" | "stockQuantity">;
+type AdminOrderResponse = { ok: true; push?: { attempted: number; delivered: number; failed: number; unavailable?: boolean } };
 
 class AdminRequestError extends Error {
   constructor(message: string, readonly status = 0) { super(message); }
@@ -178,9 +179,17 @@ export function AdminDashboard({
     const target = orders.find((order) => order.id === id);
     if (!target || (target.orderStatus === "PENDING_PAYMENT" && target.paymentStatus !== "CUSTOMER_MARKED_TRANSFERRED")) return;
     const action = target.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED" ? "CONFIRM_PAYMENT" : target.orderStatus === "PAID" ? "START_COOKING" : target.orderStatus === "COOKING" ? "MARK_READY" : "MARK_SERVED";
+    let transitionNotice = "주문 상태가 반영되었습니다.";
     if (!demoMode) {
       try {
-        await adminRequest(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+        const result = await adminRequest<AdminOrderResponse>(`/api/admin/orders/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+        if (action === "MARK_READY" && result.push) {
+          if (result.push.unavailable) transitionNotice = "조리 완료 처리됨 · 푸시 확인에 실패해 포장 주문은 전화 확인이 필요해요.";
+          else if (result.push.delivered > 0 && result.push.failed > 0) transitionNotice = `조리 완료 · 푸시 ${result.push.delivered}대 전송, ${result.push.failed}대 실패`;
+          else if (result.push.delivered > 0) transitionNotice = `조리 완료 · 푸시 알림 ${result.push.delivered}대 전송`;
+          else if (result.push.attempted > 0) transitionNotice = "조리 완료 처리됨 · 푸시 전송에 실패해 포장 주문은 전화 확인이 필요해요.";
+          else transitionNotice = "조리 완료 처리됨 · 알림 미신청 고객은 주문 현황 화면으로 확인해요.";
+        }
         await refreshSnapshot(true);
       } catch (error) { showNotice(adminErrorMessage(error, "주문 상태를 바꾸지 못했습니다.")); return; }
     } else {
@@ -191,7 +200,7 @@ export function AdminDashboard({
         return next[order.orderStatus] ? { ...order, orderStatus: next[order.orderStatus] as OrderStatus } : order;
       }));
     }
-    showNotice("주문 상태가 반영되었습니다.");
+    showNotice(transitionNotice);
   };
 
   const cancel = async (id: string) => {

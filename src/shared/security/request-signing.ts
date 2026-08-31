@@ -90,6 +90,23 @@ export async function signTransferClaim(request: Request, publicToken: string): 
   return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
 }
 
+export async function signPushSubscription(
+  request: Request,
+  publicToken: string,
+  subscription: { endpoint: string; p256dh: string; auth: string },
+): Promise<SignedRequestProof> {
+  const secret = signingSecret();
+  const rateKeyHash = await hmacHex(secret, `push-subscribe-rate-v1|${trustedClientAddress(request)}|${publicToken}`);
+  const requestTimestamp = Math.floor(Date.now() / 1000);
+  const [endpointHash, p256dhHash, authHash] = await Promise.all([
+    sha256Hex(subscription.endpoint),
+    sha256Hex(subscription.p256dh),
+    sha256Hex(subscription.auth),
+  ]);
+  const message = `push-subscribe-v1|${requestTimestamp}|${publicToken}|${endpointHash}|${p256dhHash}|${authHash}|${rateKeyHash}`;
+  return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
+}
+
 function signingSecret(): string {
   const secret = process.env.FESTIVAL_REQUEST_SIGNING_SECRET?.trim();
   if (!secret || secret.length < 32) throw serviceUnavailable("요청 보안 설정을 확인하고 있습니다. 잠시 후 다시 시도해 주세요.");
@@ -122,5 +139,10 @@ async function hmacHex(secret: string, message: string): Promise<string> {
     ["sign"],
   );
   const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(message: string): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(message)));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -9,8 +9,18 @@ import { getPublicSupabase } from "@/src/lib/supabase/server";
 import { publicSiteOrigin } from "@/src/lib/supabase/server";
 import { signPublicOrderRequest } from "@/src/shared/security/request-signing";
 
-export const metadata: Metadata = { title: "주문 현황", robots: { index: false, follow: false, noarchive: true } };
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: { params: Promise<{ publicToken: string }> }): Promise<Metadata> {
+  const { publicToken } = await params;
+  const start = z.string().uuid().safeParse(publicToken).success ? `/order/${publicToken}` : "/";
+  return {
+    title: "주문 현황",
+    robots: { index: false, follow: false, noarchive: true },
+    manifest: `/manifest.webmanifest?start=${encodeURIComponent(start)}`,
+    appleWebApp: { capable: true, title: "컴공 52 주문", statusBarStyle: "default" },
+  };
+}
 
 export default async function PublicOrderPage({ params }: { params: Promise<{ publicToken: string }> }) {
   const { publicToken } = await params;
