@@ -7,7 +7,7 @@ export interface CreateOrderCommand {
   clientRequestId: string;
   customerName: string | null;
   customerPhone: string | null;
-  items: Array<{ menuItemId: string; quantity: number }>;
+  items: Array<{ menuItemId: string; quantity: number; optionIds: string[] }>;
 }
 
 export interface CreatedOrder {

@@ -17,14 +17,31 @@ import { createOrderSchema } from "../src/features/orders/presentation/schemas.t
 import { normalizeAllowedPushEndpoint } from "../src/features/push/domain/push-subscription.ts";
 
 const menu = [
-  { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3 },
-  { id: "menu-2", name: "품절 감자", price: 4500, status: "SOLD_OUT", stockQuantity: 0 },
+  { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3, options: [{ id: "option-1", name: "곱빼기", priceDelta: 1000 }] },
+  { id: "menu-2", name: "품절 감자", price: 4500, status: "SOLD_OUT", stockQuantity: 0, options: [] },
 ];
 
 test("서버의 현재 가격으로 스냅샷과 총액을 계산한다", () => {
   const lines = priceOrderSelections([{ menuItemId: "menu-1", quantity: 2 }], menu);
-  assert.deepEqual(lines[0], { menuItemId: "menu-1", quantity: 2, menuName: "축제 국수", unitPrice: 6000, subtotal: 12000 });
+  assert.deepEqual(lines[0], { menuItemId: "menu-1", quantity: 2, menuName: "축제 국수", unitPrice: 6000, subtotal: 12000, selectedOptions: [] });
   assert.equal(calculateOrderTotal(lines), 12000);
+});
+
+test("선택한 유료 옵션을 서버 가격으로 합산하고 존재하지 않는 옵션을 거부한다", () => {
+  const lines = priceOrderSelections([{ menuItemId: "menu-1", quantity: 2, optionIds: ["option-1"] }], menu);
+  assert.equal(lines[0].unitPrice, 7000);
+  assert.equal(lines[0].subtotal, 14000);
+  assert.deepEqual(lines[0].selectedOptions, [{ id: "option-1", name: "곱빼기", priceDelta: 1000 }]);
+  assert.throws(() => priceOrderSelections([{ menuItemId: "menu-1", quantity: 1, optionIds: ["missing"] }], menu), /선택할 수 없는 옵션/);
+});
+
+test("유료 옵션 마이그레이션은 관리자 설정과 주문 가격 스냅샷을 함께 저장한다", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20260906122825_add_menu_paid_options.sql", import.meta.url), "utf8");
+  assert.match(sql, /menu_items[\s\S]*options jsonb not null/i);
+  assert.match(sql, /order_items[\s\S]*selected_options jsonb not null/i);
+  assert.match(sql, /v_unit_price := v_menu\.price \+ v_option_total/i);
+  assert.match(sql, /invalid option selection/i);
+  assert.match(sql, /selected_options', oi\.selected_options/i);
 });
 
 test("품절 메뉴와 남은 재고를 넘는 주문을 거부한다", () => {

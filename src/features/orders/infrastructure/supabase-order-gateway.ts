@@ -14,7 +14,7 @@ const createdOrderSchema = z.object({
   duplicate: z.boolean(),
 });
 
-const publicOrderSchema: z.ZodType<PublicOrder> = z.object({
+const publicOrderSchema = z.object({
   order_number: z.string(),
   fulfillment_type: z.enum(["DINE_IN", "TAKEOUT"]),
   table_number: z.number().int().positive().nullable(),
@@ -22,7 +22,15 @@ const publicOrderSchema: z.ZodType<PublicOrder> = z.object({
   order_status: z.enum(["PENDING_PAYMENT", "PAID", "COOKING", "READY", "SERVED", "CANCELLED"]),
   payment_status: z.enum(["UNPAID", "CUSTOMER_MARKED_TRANSFERRED", "CONFIRMED", "REJECTED"]),
   expires_at: z.string().datetime({ offset: true }).nullable().optional(),
-  items: z.array(z.object({ name: z.string(), quantity: z.number().int().positive(), subtotal: z.number().int().nonnegative() })),
+  items: z.array(z.object({
+    name: z.string(), quantity: z.number().int().positive(), subtotal: z.number().int().nonnegative(),
+    selected_options: z.array(z.object({ name: z.string(), price_delta: z.number().int().nonnegative() })).default([]),
+  }).transform((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    subtotal: item.subtotal,
+    selectedOptions: item.selected_options.map((option) => ({ name: option.name, priceDelta: option.price_delta })),
+  }))),
 });
 
 export class SupabaseOrderGateway implements OrderGateway {
@@ -34,7 +42,7 @@ export class SupabaseOrderGateway implements OrderGateway {
       p_qr_token: command.qrToken,
       p_fulfillment_type: command.fulfillmentType,
       p_client_request_id: command.clientRequestId,
-      p_items: command.items.map((item) => ({ menu_item_id: item.menuItemId, quantity: item.quantity })),
+      p_items: command.items.map((item) => ({ menu_item_id: item.menuItemId, quantity: item.quantity, option_ids: item.optionIds })),
       p_customer_name: command.customerName,
       p_customer_phone: command.customerPhone,
       p_rate_key_hash: security.rateKeyHash,
@@ -90,6 +98,7 @@ function mapCreateError(message: string) {
   if (normalized.includes("rate limit") || normalized.includes("too many unpaid")) return rateLimited("주문 요청이 너무 많습니다. 기존 주문을 입금 처리하거나 잠시 후 다시 시도해 주세요.");
   if (normalized.includes("quantity limit") || normalized.includes("invalid quantity")) return conflict("한 주문은 메뉴별 10개, 전체 20개까지 가능합니다.");
   if (normalized.includes("contact")) return conflict("포장 주문의 이름과 휴대폰 번호를 다시 확인해 주세요.");
+  if (normalized.includes("option")) return conflict("선택한 옵션이 변경되었습니다. 메뉴를 새로고침해 다시 선택해 주세요.");
   if (normalized.includes("signature") || normalized.includes("signing")) return conflict("주문 보안 확인에 실패했습니다. 화면을 새로고침해 주세요.");
   return conflict("주문을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
 }

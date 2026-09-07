@@ -1,4 +1,4 @@
-import type { MenuDraft, MenuItem, MenuStatus } from "@/src/features/menu/domain/menu";
+import type { MenuDraft, MenuItem, MenuOption, MenuStatus } from "@/src/features/menu/domain/menu";
 import { conflict } from "@/src/shared/errors/app-error";
 
 export interface MenuUpdate {
@@ -7,6 +7,7 @@ export interface MenuUpdate {
   price?: number;
   category?: string;
   status?: MenuStatus;
+  options?: MenuOption[];
 }
 
 export interface MenuAdminGateway {

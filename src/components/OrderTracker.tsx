@@ -27,6 +27,6 @@ export function OrderTracker({ publicToken, initialOrder }: { publicToken: strin
       {stages.map((item, index) => <div className={index < step ? "done" : index === step ? "active" : ""} key={item.title}><span>{index < step ? <Check size={17} /> : item.icon}</span><strong>{item.title}</strong><small>{index === step ? "현재 단계" : index < step ? "완료" : "대기"}</small></div>)}
     </section>
     <PushNotificationOptIn publicToken={publicToken} orderStatus={order.order_status} />
-    <section className="tracker-order-card"><div className="tracker-card-head"><strong>주문 내역</strong><span><Clock3 size={14} /> 자동 새로고침</span></div>{order.items.map((item) => <div className="tracker-item" key={item.name}><span>{item.name} <small>× {item.quantity}</small></span><strong>{formatWon(item.subtotal)}</strong></div>)}<div className="tracker-total"><span>총 결제금액</span><strong>{formatWon(order.total_amount)}</strong></div></section>
+    <section className="tracker-order-card"><div className="tracker-card-head"><strong>주문 내역</strong><span><Clock3 size={14} /> 자동 새로고침</span></div>{order.items.map((item, index) => <div className="tracker-item" key={`${item.name}-${index}`}><span>{item.name} <small>× {item.quantity}</small>{item.selectedOptions.length > 0 && <em>{item.selectedOptions.map((option) => `${option.name} +${formatWon(option.priceDelta)}`).join(" · ")}</em>}</span><strong>{formatWon(item.subtotal)}</strong></div>)}<div className="tracker-total"><span>총 결제금액</span><strong>{formatWon(order.total_amount)}</strong></div></section>
   </main>;
 }

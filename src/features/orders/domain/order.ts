@@ -11,7 +11,7 @@ export interface PublicOrder {
   order_status: OrderStatus;
   payment_status: PaymentStatus;
   expires_at?: string | null;
-  items: Array<{ name: string; quantity: number; subtotal: number }>;
+  items: Array<{ name: string; quantity: number; subtotal: number; selectedOptions: Array<{ name: string; priceDelta: number }> }>;
 }
 
 export function publicOrderProgressStep(order: Pick<PublicOrder, "order_status" | "payment_status">): number {
@@ -33,9 +33,9 @@ export function publicOrderStatusMessage(order: Pick<PublicOrder, "order_status"
   return "계좌이체 후 ‘입금했어요’를 눌러주세요.";
 }
 
-export interface OrderLineInput { menuItemId: string; quantity: number }
-export interface PricedOrderLine extends OrderLineInput { menuName: string; unitPrice: number; subtotal: number }
-export interface MenuPricingRecord { id: string; name: string; price: number; status: "AVAILABLE" | "SOLD_OUT" | "HIDDEN" | "ARCHIVED"; stockQuantity: number }
+export interface OrderLineInput { menuItemId: string; quantity: number; optionIds?: string[] }
+export interface PricedOrderLine extends OrderLineInput { menuName: string; unitPrice: number; subtotal: number; selectedOptions?: Array<{ name: string; priceDelta: number }> }
+export interface MenuPricingRecord { id: string; name: string; price: number; status: "AVAILABLE" | "SOLD_OUT" | "HIDDEN" | "ARCHIVED"; stockQuantity: number; options?: Array<{ id: string; name: string; priceDelta: number }> }
 
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   PENDING_PAYMENT: "PAID",
@@ -72,7 +72,13 @@ export function priceOrderSelections(selections: ReadonlyArray<OrderLineInput>, 
     const current = menu.find((item) => item.id === selection.menuItemId);
     if (!current || current.status !== "AVAILABLE") throw new Error("주문할 수 없는 메뉴입니다.");
     if (!Number.isInteger(selection.quantity) || selection.quantity <= 0 || current.stockQuantity < selection.quantity) throw new Error("재고 또는 수량을 확인해 주세요.");
-    return { ...selection, menuName: current.name, unitPrice: current.price, subtotal: current.price * selection.quantity };
+    const optionIds = selection.optionIds ?? [];
+    if (new Set(optionIds).size !== optionIds.length) throw new Error("같은 옵션이 중복되어 있습니다.");
+    const selectedOptions = optionIds.map((id) => current.options?.find((option) => option.id === id));
+    if (selectedOptions.some((option) => !option)) throw new Error("선택할 수 없는 옵션입니다.");
+    const chosen = selectedOptions.filter((option): option is NonNullable<typeof option> => Boolean(option));
+    const unitPrice = current.price + chosen.reduce((sum, option) => sum + option.priceDelta, 0);
+    return { ...selection, menuName: current.name, unitPrice, subtotal: unitPrice * selection.quantity, selectedOptions: chosen };
   });
 }
 

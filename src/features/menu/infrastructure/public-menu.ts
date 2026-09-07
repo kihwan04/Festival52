@@ -7,6 +7,7 @@ import { signLegacyTeamRequest, signPublicMenuRequest, signTableResolution } fro
 const publicMenuSchema = z.array(z.object({
   id: z.string().uuid(), name: z.string(), description: z.string(), price: z.number().int().nonnegative(),
   category: z.string(), status: z.enum(["AVAILABLE", "SOLD_OUT"]), stock_quantity: z.number().int().nonnegative(),
+  options: z.array(z.object({ id: z.string().uuid(), name: z.string(), price_delta: z.number().int().nonnegative() })).default([]),
 }));
 
 const emojiByCategory: Record<string, string> = { "안주": "🥘", "식사": "🍜", "간식": "🥔", "음료": "🍹" };
@@ -26,6 +27,7 @@ export async function loadPublicMenu(teamSlug?: string): Promise<MenuItem[] | nu
     id: item.id, name: item.name, description: item.description, price: item.price,
     category: item.category as MenuCategory, status: item.status, stockQuantity: item.stock_quantity,
     reservedQuantity: 0, soldQuantity: 0, emoji: emojiByCategory[item.category] ?? "🍽️",
+    options: item.options.map((option) => ({ id: option.id, name: option.name, priceDelta: option.price_delta })),
   }));
 }
 

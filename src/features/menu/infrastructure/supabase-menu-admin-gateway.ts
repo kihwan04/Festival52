@@ -7,6 +7,7 @@ import { conflict, notFound } from "@/src/shared/errors/app-error";
 const menuRowSchema = z.object({
   id: z.string().uuid(), name: z.string(), description: z.string(), price: z.number().int().nonnegative(),
   category: z.string(), status: z.enum(["AVAILABLE", "SOLD_OUT", "HIDDEN", "ARCHIVED"]), stock_quantity: z.number().int().nonnegative(),
+  options: z.array(z.object({ id: z.string().uuid(), name: z.string(), price_delta: z.number().int().nonnegative() })).default([]),
 });
 
 export class SupabaseMenuAdminGateway implements MenuAdminGateway {
@@ -26,6 +27,7 @@ export class SupabaseMenuAdminGateway implements MenuAdminGateway {
       p_category: draft.category,
       p_status: draft.status,
       p_stock_quantity: draft.stockQuantity,
+      p_options: draft.options.map((option) => ({ id: option.id, name: option.name, price_delta: option.priceDelta })),
     });
     if (error) throw conflict("메뉴를 추가하지 못했습니다.");
     return mapMenu(data);
@@ -33,11 +35,12 @@ export class SupabaseMenuAdminGateway implements MenuAdminGateway {
 
   async updateMenu(id: string, update: MenuUpdate): Promise<MenuItem> {
     const { data: current, error: currentError } = await this.client.from("menu_items")
-      .select("id,name,description,price,category,status,stock_quantity").eq("id", id).maybeSingle();
+      .select("id,name,description,price,category,status,stock_quantity,options").eq("id", id).maybeSingle();
     if (currentError || !current) throw notFound("메뉴를 찾을 수 없습니다.");
     const parsed = menuRowSchema.safeParse(current);
     if (!parsed.success) throw conflict("메뉴 정보를 확인하지 못했습니다.");
     const next = { ...parsed.data, ...update };
+    const nextOptions = update.options ?? parsed.data.options.map((option) => ({ id: option.id, name: option.name, priceDelta: option.price_delta }));
     const { data, error } = await this.client.rpc("update_festival_menu_item", {
       p_menu_item_id: id,
       p_name: next.name,
@@ -45,6 +48,7 @@ export class SupabaseMenuAdminGateway implements MenuAdminGateway {
       p_price: next.price,
       p_category: next.category,
       p_status: next.status,
+      p_options: nextOptions.map((option) => ({ id: option.id, name: option.name, price_delta: option.priceDelta })),
     });
     if (error) throw conflict("메뉴를 수정하지 못했습니다.");
     return mapMenu(data);
@@ -80,5 +84,6 @@ function mapMenu(value: unknown): MenuItem {
     id: row.id, name: row.name, description: row.description, price: row.price, category: row.category,
     status: row.stock_quantity === 0 ? "SOLD_OUT" : row.status, stockQuantity: row.stock_quantity,
     reservedQuantity: 0, soldQuantity: 0, emoji: "🍽️",
+    options: row.options.map((option) => ({ id: option.id, name: option.name, priceDelta: option.price_delta })),
   };
 }

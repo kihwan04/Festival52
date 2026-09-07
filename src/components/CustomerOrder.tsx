@@ -20,11 +20,15 @@ interface CustomerOrderProps {
 }
 
 interface CreatedOrder { orderNumber: string; publicToken: string | null; initialOrder: PublicOrder }
+interface CartLine { key: string; menuItemId: string; optionIds: string[]; quantity: number }
+type CartDisplayItem = MenuItem & { key: string; optionIds: string[]; selectedOptions: MenuItem["options"]; unitPrice: number; quantity: number };
 
 export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrToken, menuItems = DEMO_MENU, storeSettings = DEMO_STORE_SETTINGS, demoMode = false }: CustomerOrderProps) {
   const [fulfillment, setFulfillment] = useState<FulfillmentType>(initialFulfillment);
   const [category, setCategory] = useState("전체");
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [optionPicker, setOptionPicker] = useState<MenuItem | null>(null);
+  const [pendingOptionIds, setPendingOptionIds] = useState<string[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   const [transferClaimed, setTransferClaimed] = useState(false);
@@ -41,24 +45,52 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
 
   const categories = ["전체", ...Array.from(new Set(menuItems.map((item) => item.category)))];
   const visibleMenu = menuItems.filter((item) => category === "전체" || item.category === category);
-  const cartItems = menuItems.filter((item) => cart[item.id]).map((item) => ({ ...item, quantity: cart[item.id] }));
-  const totalQuantity = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
-  const totalAmount = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartItems: CartDisplayItem[] = cart.flatMap((line) => {
+    const item = menuItems.find((candidate) => candidate.id === line.menuItemId);
+    if (!item) return [];
+    const selectedOptions = item.options.filter((option) => line.optionIds.includes(option.id));
+    return [{ ...item, ...line, selectedOptions, unitPrice: item.price + selectedOptions.reduce((sum, option) => sum + option.priceDelta, 0) }];
+  });
+  const totalQuantity = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const totalAmount = cartItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const canDineIn = Boolean(tableNumber && qrToken);
   const customerMenuHref = canDineIn ? `/t/${encodeURIComponent(qrToken ?? "")}` : `/s/${encodeURIComponent(teamSlug)}`;
   const acceptingOrders = storeSettings.isOpen && storeSettings.configured;
 
-  const updateQuantity = (id: string, delta: number) => {
-    const item = menuItems.find((candidate) => candidate.id === id);
-    if (!item) return;
+  const menuCartQuantity = (menuItemId: string) => cart.filter((line) => line.menuItemId === menuItemId).reduce((sum, line) => sum + line.quantity, 0);
+
+  const updateQuantity = (key: string, delta: number) => {
     setCart((current) => {
-      const currentTotal = Object.values(current).reduce((sum, quantity) => sum + quantity, 0);
+      const line = current.find((candidate) => candidate.key === key);
+      if (!line) return current;
+      const item = menuItems.find((candidate) => candidate.id === line.menuItemId);
+      if (!item) return current;
+      const currentTotal = current.reduce((sum, candidate) => sum + candidate.quantity, 0);
+      const currentMenuTotal = current.filter((candidate) => candidate.menuItemId === item.id).reduce((sum, candidate) => sum + candidate.quantity, 0);
       if (delta > 0 && currentTotal >= 20) return current;
-      const next = Math.max(0, Math.min(10, item.stockQuantity, (current[id] ?? 0) + delta));
-      const result = { ...current, [id]: next };
-      if (next === 0) delete result[id];
-      return result;
+      if (delta > 0 && currentMenuTotal >= Math.min(10, item.stockQuantity)) return current;
+      const next = line.quantity + delta;
+      return next <= 0 ? current.filter((candidate) => candidate.key !== key) : current.map((candidate) => candidate.key === key ? { ...candidate, quantity: next } : candidate);
     });
+  };
+
+  const addToCart = (item: MenuItem, optionIds: string[] = []) => {
+    const normalizedIds = [...optionIds].sort();
+    const key = `${item.id}:${normalizedIds.join(",")}`;
+    setCart((current) => {
+      const currentTotal = current.reduce((sum, line) => sum + line.quantity, 0);
+      const currentMenuTotal = current.filter((line) => line.menuItemId === item.id).reduce((sum, line) => sum + line.quantity, 0);
+      if (currentTotal >= 20 || currentMenuTotal >= Math.min(10, item.stockQuantity)) return current;
+      const existing = current.find((line) => line.key === key);
+      return existing
+        ? current.map((line) => line.key === key ? { ...line, quantity: line.quantity + 1 } : line)
+        : [...current, { key, menuItemId: item.id, optionIds: normalizedIds, quantity: 1 }];
+    });
+  };
+
+  const openOptionPicker = (item: MenuItem) => {
+    setPendingOptionIds([]);
+    setOptionPicker(item);
   };
 
   const placeOrder = async () => {
@@ -86,7 +118,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ teamSlug, qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, customerName: fulfillment === "TAKEOUT" ? customerName.trim() : null, customerPhone: fulfillment === "TAKEOUT" ? normalizedPhone : null, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity })) }),
+        body: JSON.stringify({ teamSlug, qrToken: fulfillment === "DINE_IN" ? qrToken ?? null : null, fulfillmentType: fulfillment, clientRequestId: clientRequestId.current, customerName: fulfillment === "TAKEOUT" ? customerName.trim() : null, customerPhone: fulfillment === "TAKEOUT" ? normalizedPhone : null, items: cartItems.map((item) => ({ menuItemId: item.id, quantity: item.quantity, optionIds: item.optionIds })) }),
       });
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "message" in result ? String(result.message) : "주문을 접수하지 못했습니다. 메뉴와 재고를 다시 확인해 주세요.");
@@ -193,7 +225,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
 
       <section className="menu-grid" aria-label="메뉴 목록">
         {visibleMenu.map((item) => {
-          const quantity = cart[item.id] ?? 0;
+          const quantity = menuCartQuantity(item.id);
           const orderable = isOrderable(item);
           const quantityLimitReached = quantity >= Math.min(10, item.stockQuantity) || totalQuantity >= 20;
           return (
@@ -202,7 +234,8 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
               <div className="menu-card-body">
                 <div className="menu-title-row"><h2>{item.name}</h2><span className={item.stockQuantity <= 5 && orderable ? "stock-low" : "stock-label"}>{orderable ? `${item.stockQuantity}개 남음` : "오늘은 품절"}</span></div>
                 <p>{item.description}</p>
-                <div className="menu-card-bottom"><strong>{formatWon(item.price)}</strong>{quantity > 0 ? <div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={16} /></button><span>{quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} aria-label={`${item.name} 수량 늘리기`} disabled={quantityLimitReached || !acceptingOrders}><Plus size={16} /></button></div> : <button className="add-button" type="button" onClick={() => updateQuantity(item.id, 1)} disabled={!orderable || !acceptingOrders || totalQuantity >= 20} aria-label={`${item.name} 담기`}><Plus size={19} /></button>}</div>
+                {item.options.length > 0 && <span className="menu-option-hint">옵션 {item.options.length}개 · 선택 가능</span>}
+                <div className="menu-card-bottom"><strong>{formatWon(item.price)}{item.options.length > 0 && <small>부터</small>}</strong>{item.options.length > 0 ? <button className="option-button" type="button" onClick={() => openOptionPicker(item)} disabled={!orderable || !acceptingOrders || quantityLimitReached}>{quantity > 0 ? `${quantity}개 담김 · 더 담기` : "옵션 선택"}</button> : quantity > 0 ? <div className="quantity-control"><button type="button" onClick={() => updateQuantity(`${item.id}:`, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={16} /></button><span>{quantity}</span><button type="button" onClick={() => addToCart(item)} aria-label={`${item.name} 수량 늘리기`} disabled={quantityLimitReached || !acceptingOrders}><Plus size={16} /></button></div> : <button className="add-button" type="button" onClick={() => addToCart(item)} disabled={!orderable || !acceptingOrders || totalQuantity >= 20} aria-label={`${item.name} 담기`}><Plus size={19} /></button>}</div>
               </div>
             </article>
           );
@@ -214,7 +247,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
 
       {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">
         <div className="sheet-handle" /><div className="sheet-title"><div><small>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장"}</small><h2>주문을 확인해 주세요</h2></div><button className="round-button" type="button" onClick={() => setCartOpen(false)} aria-label="닫기"><X size={19} /></button></div>
-        <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.id}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{formatWon(item.price)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.id, 1)} disabled={item.quantity >= Math.min(10, item.stockQuantity) || totalQuantity >= 20 || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
+        <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.key}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong>{item.selectedOptions.length > 0 && <em>{item.selectedOptions.map((option) => `${option.name} +${formatWon(option.priceDelta)}`).join(" · ")}</em>}<small>{formatWon(item.unitPrice)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.key, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.key, 1)} disabled={menuCartQuantity(item.id) >= Math.min(10, item.stockQuantity) || totalQuantity >= 20 || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
         {fulfillment === "TAKEOUT" && <div className="takeout-contact-form">
           <div><strong>포장 수령자 정보</strong><small>음식이 준비되면 이름으로 불러드리고, 못 보신 경우에만 전화드려요.</small></div>
           <label>이름<input type="text" value={customerName} maxLength={40} autoComplete="name" placeholder="예: 김민준" onChange={(event) => { setCustomerName(event.target.value); setSubmissionError(null); }} /></label>
@@ -224,6 +257,13 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
         <div className="cart-summary"><span>총 {totalQuantity}개</span><strong>{formatWon(totalAmount)}</strong></div>
         {submissionError && <p className="submission-error">{submissionError}</p>}
         <button className="checkout-button" type="button" disabled={submitting || !acceptingOrders} onClick={placeOrder}>{submitting ? "재고 확인 중…" : acceptingOrders ? "계좌이체로 주문하기" : "현재 주문 준비 중"} {!submitting && acceptingOrders && <ChevronRight size={19} />}</button><p className="checkout-caption">주문 후 입금 계좌와 주문번호를 안내해 드려요.</p>
+      </section></div>}
+      {optionPicker && <div className="sheet-backdrop option-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOptionPicker(null); }}><section className="cart-sheet option-picker" role="dialog" aria-modal="true" aria-label={`${optionPicker.name} 옵션 선택`}>
+        <div className="sheet-handle" /><div className="sheet-title"><div><small>추가 옵션</small><h2>{optionPicker.name}</h2></div><button className="round-button" type="button" onClick={() => setOptionPicker(null)} aria-label="닫기"><X size={19} /></button></div>
+        <p className="option-picker-guide">원하는 옵션을 모두 선택해 주세요. 선택하지 않고 담아도 됩니다.</p>
+        <div className="customer-option-list">{optionPicker.options.map((option) => <label key={option.id} className={pendingOptionIds.includes(option.id) ? "selected" : ""}><input type="checkbox" checked={pendingOptionIds.includes(option.id)} onChange={(event) => setPendingOptionIds((current) => event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id))} /><span><strong>{option.name}</strong><small>+ {formatWon(option.priceDelta)}</small></span><i><Check size={15} /></i></label>)}</div>
+        <div className="option-picker-total"><span>1개 금액</span><strong>{formatWon(optionPicker.price + optionPicker.options.filter((option) => pendingOptionIds.includes(option.id)).reduce((sum, option) => sum + option.priceDelta, 0))}</strong></div>
+        <button className="checkout-button" type="button" onClick={() => { addToCart(optionPicker, pendingOptionIds); setOptionPicker(null); }}>{pendingOptionIds.length > 0 ? `옵션 ${pendingOptionIds.length}개와 함께 담기` : "기본 메뉴로 담기"}</button>
       </section></div>}
     </main>
   );
@@ -236,7 +276,7 @@ function formatPhoneInput(value: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
-function buildInitialOrder(orderNumber: string, fulfillmentType: FulfillmentType, currentTableNumber: number | null, totalAmount: number, items: Array<MenuItem & { quantity: number }>): PublicOrder {
+function buildInitialOrder(orderNumber: string, fulfillmentType: FulfillmentType, currentTableNumber: number | null, totalAmount: number, items: CartDisplayItem[]): PublicOrder {
   return {
     order_number: orderNumber,
     fulfillment_type: fulfillmentType,
@@ -244,7 +284,7 @@ function buildInitialOrder(orderNumber: string, fulfillmentType: FulfillmentType
     total_amount: totalAmount,
     order_status: "PENDING_PAYMENT",
     payment_status: "UNPAID",
-    items: items.map((item) => ({ name: item.name, quantity: item.quantity, subtotal: item.price * item.quantity })),
+    items: items.map((item) => ({ name: item.name, quantity: item.quantity, subtotal: item.unitPrice * item.quantity, selectedOptions: item.selectedOptions.map((option) => ({ name: option.name, priceDelta: option.priceDelta })) })),
   };
 }
 

@@ -5,14 +5,14 @@ import Image from "next/image";
 import QRCode from "qrcode";
 import { AlertTriangle, Archive, BarChart3, Bell, CalendarDays, Check, ChefHat, ChevronLeft, ChevronRight, ClipboardList, Clock3, CookingPot, Copy, EyeOff, LayoutGrid, LockKeyhole, Minus, Package, Pencil, Phone, Plus, QrCode, RefreshCw, RotateCw, Search, Settings, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU, DEMO_ORDERS, DEMO_TABLES, type DemoOrder, type FestivalTable } from "@/src/shared/demo-data";
-import { formatWon, type MenuItem, type MenuStatus } from "@/src/features/menu/domain/menu";
+import { formatWon, type MenuItem, type MenuOption, type MenuStatus } from "@/src/features/menu/domain/menu";
 import type { OrderStatus } from "@/src/features/orders/domain/order";
 import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type DailyTableSalesSummary, type SalesSummary, type TeamIdentity } from "@/src/features/admin/domain/admin-snapshot";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 
 type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
 type View = "orders" | "inventory" | "tables" | "sales" | "settings";
-type MenuDraft = Pick<MenuItem, "name" | "description" | "price" | "category" | "status" | "stockQuantity">;
+type MenuDraft = Pick<MenuItem, "name" | "description" | "price" | "category" | "status" | "stockQuantity" | "options">;
 type AdminOrderResponse = { ok: true; push?: { attempted: number; delivered: number; failed: number; unavailable?: boolean } };
 
 class AdminRequestError extends Error {
@@ -239,7 +239,7 @@ export function AdminDashboard({
         await adminRequest(id ? `/api/admin/menu/${id}` : "/api/admin/menu", {
           method: id ? "PATCH" : "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(id ? { name: draft.name, description: draft.description, price: draft.price, category: draft.category, status: draft.status } : draft),
+          body: JSON.stringify(id ? { name: draft.name, description: draft.description, price: draft.price, category: draft.category, status: draft.status, options: draft.options } : draft),
         });
         await refreshSnapshot(true);
       } catch (error) { showNotice(adminErrorMessage(error, "메뉴를 저장하지 못했습니다.")); return false; }
@@ -546,7 +546,7 @@ function OrderCard({ order, onAdvance, onCancel }: { order: DemoOrder; onAdvance
   return <article className={`order-card status-${order.orderStatus.toLowerCase()}`}>
     <div className="order-card-head"><div><span className="order-number">#{order.orderNumber}</span><span className={`order-status status-${order.orderStatus.toLowerCase()}`}>{statusLabel}</span></div><span className="order-time"><Clock3 size={15} /> {order.orderedAt}</span></div>
     <div className={`order-destination ${order.fulfillmentType === "TAKEOUT" ? "takeout" : ""}`}>{order.fulfillmentType === "DINE_IN" ? <><UtensilsCrossed size={19} /><strong>테이블 {order.tableNumber}</strong><span>매장 이용</span></> : <><ShoppingBag size={19} /><div className="takeout-contact-copy"><strong>{order.customerName ?? "포장 주문"}</strong><span>{order.customerPhone ? formatCustomerPhone(order.customerPhone) : "주문번호로 호출"}</span></div>{order.customerPhone && <a className="takeout-call" href={`tel:${order.customerPhone}`} aria-label={`${order.customerName ?? order.orderNumber} 고객에게 전화`}><Phone size={13} /> 전화</a>}</>}</div>
-    <div className="order-items">{order.items.map((item) => <div key={item.name}><span>{item.name}</span><strong>× {item.quantity}</strong></div>)}</div>
+    <div className="order-items">{order.items.map((item, index) => <div key={`${item.name}-${index}`}><span>{item.name}{item.selectedOptions && item.selectedOptions.length > 0 && <small>{item.selectedOptions.map((option) => `+ ${option.name}`).join(" · ")}</small>}</span><strong>× {item.quantity}</strong></div>)}</div>
     <div className="order-total"><span>총 결제금액</span><strong>{formatWon(order.totalAmount)}</strong></div>
     <div className="order-actions"><button className="cancel-order" type="button" onClick={() => onCancel(order.id)} aria-label={`${order.orderNumber} 주문 취소`}><X size={17} /></button><button className="primary-order-action" type="button" disabled={waitingForTransfer} onClick={() => onAdvance(order.id)}>{actionIcon}{actionLabel}</button></div>
   </article>;
@@ -590,7 +590,7 @@ function InventoryView({ menu, categories, onAdjust, onSaveMenu, onAddCategory, 
     </section>
     <section className="inventory-panel">
       <div className="panel-heading"><div><h2>현재 메뉴 재고</h2><p>재고 조정은 사유와 함께 감사 기록에 저장됩니다.</p></div><button type="button" onClick={() => setEditor("NEW")}><Plus size={17} /> 새 메뉴</button></div>
-      <div className="inventory-table-wrap"><table className="inventory-table"><thead><tr><th>메뉴</th><th>판매 가능</th><th>주문 대기</th><th>판매 완료</th><th>상태</th><th>조정·관리</th></tr></thead><tbody>{activeMenu.map((item) => <tr key={item.id}><td><span className="table-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{item.category} · {formatWon(item.price)}</small></div></td><td><strong className={item.stockQuantity <= 5 ? "low-number" : ""}>{item.stockQuantity}</strong>개</td><td>{item.reservedQuantity}개</td><td>{item.soldQuantity}개</td><td><span className={`inventory-status ${item.status.toLowerCase()}`}>{MENU_STATUS_LABEL[item.status]}</span></td><td><div className="stock-actions"><button type="button" onClick={() => onAdjust(item.id, -1)} disabled={item.stockQuantity === 0} aria-label={`${item.name} 재고 1 감소`}><Minus size={15} /></button><button type="button" onClick={() => onAdjust(item.id, 10)} aria-label={`${item.name} 재고 10 추가`}><Plus size={15} /> 10</button><button type="button" onClick={() => setEditor(item)} aria-label={`${item.name} 수정`}><Pencil size={14} /> 수정</button><button type="button" onClick={() => onSaveMenu(item.id, { ...item, status: item.status === "SOLD_OUT" ? "AVAILABLE" : "SOLD_OUT" })} aria-label={`${item.name} 품절 상태 전환`}><EyeOff size={14} /></button></div></td></tr>)}</tbody></table></div>
+      <div className="inventory-table-wrap"><table className="inventory-table"><thead><tr><th>메뉴</th><th>판매 가능</th><th>주문 대기</th><th>판매 완료</th><th>상태</th><th>조정·관리</th></tr></thead><tbody>{activeMenu.map((item) => <tr key={item.id}><td><span className="table-emoji">{item.emoji}</span><div><strong>{item.name}</strong><small>{item.category} · {formatWon(item.price)}{item.options.length > 0 ? ` · 옵션 ${item.options.length}개` : ""}</small></div></td><td><strong className={item.stockQuantity <= 5 ? "low-number" : ""}>{item.stockQuantity}</strong>개</td><td>{item.reservedQuantity}개</td><td>{item.soldQuantity}개</td><td><span className={`inventory-status ${item.status.toLowerCase()}`}>{MENU_STATUS_LABEL[item.status]}</span></td><td><div className="stock-actions"><button type="button" onClick={() => onAdjust(item.id, -1)} disabled={item.stockQuantity === 0} aria-label={`${item.name} 재고 1 감소`}><Minus size={15} /></button><button type="button" onClick={() => onAdjust(item.id, 10)} aria-label={`${item.name} 재고 10 추가`}><Plus size={15} /> 10</button><button type="button" onClick={() => setEditor(item)} aria-label={`${item.name} 수정`}><Pencil size={14} /> 수정</button><button type="button" onClick={() => onSaveMenu(item.id, { ...item, status: item.status === "SOLD_OUT" ? "AVAILABLE" : "SOLD_OUT" })} aria-label={`${item.name} 품절 상태 전환`}><EyeOff size={14} /></button></div></td></tr>)}</tbody></table></div>
     </section>
     <div className="inventory-footnote"><Clock3 size={16} /> 메뉴 보관은 수정 창에서 선택할 수 있고 주문 내역은 삭제되지 않습니다.</div>
     {editor && <MenuEditor item={editor === "NEW" ? null : editor} categories={categories} onClose={() => setEditor(null)} onSave={async (draft) => { if (await onSaveMenu(editor === "NEW" ? null : editor.id, draft)) setEditor(null); }} />}
@@ -598,7 +598,7 @@ function InventoryView({ menu, categories, onAdjust, onSaveMenu, onAddCategory, 
 }
 
 function MenuEditor({ item, categories, onClose, onSave }: { item: MenuItem | null; categories: string[]; onClose: () => void; onSave: (draft: MenuDraft) => Promise<void> }) {
-  const [draft, setDraft] = useState<MenuDraft>(item ? { name: item.name, description: item.description, price: item.price, category: item.category, status: item.status, stockQuantity: item.stockQuantity } : { name: "", description: "", price: 0, category: categories[0] ?? "", status: "AVAILABLE", stockQuantity: 0 });
+  const [draft, setDraft] = useState<MenuDraft>(item ? { name: item.name, description: item.description, price: item.price, category: item.category, status: item.status, stockQuantity: item.stockQuantity, options: item.options } : { name: "", description: "", price: 0, category: categories[0] ?? "", status: "AVAILABLE", stockQuantity: 0, options: [] });
   const [saving, setSaving] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -612,8 +612,25 @@ function MenuEditor({ item, categories, onClose, onSave }: { item: MenuItem | nu
     <label>설명<textarea maxLength={500} rows={3} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
     <div className="admin-form-row"><label>가격<input required type="number" min="0" step="100" value={draft.price} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })} /></label><label>카테고리<select required value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div>
     <div className="admin-form-row"><label>판매 상태<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as MenuStatus })}><option value="AVAILABLE">판매 중</option><option value="SOLD_OUT">품절</option><option value="HIDDEN">숨김</option>{item && <option value="ARCHIVED">보관</option>}</select></label><label>초기 재고<input type="number" min="0" max="100000" disabled={Boolean(item)} value={draft.stockQuantity} onChange={(event) => setDraft({ ...draft, stockQuantity: Number(event.target.value) })} /><small>{item ? "기존 재고는 표의 빠른 조정으로 변경하세요." : "등록 시 확보된 수량"}</small></label></div>
+    <MenuOptionEditor options={draft.options} onChange={(options) => setDraft({ ...draft, options })} />
     <div className="admin-modal-actions"><button type="button" onClick={onClose}>취소</button><button type="submit" disabled={saving || categories.length === 0}>{item?.status === "ARCHIVED" ? <Archive size={16} /> : <Check size={16} />}{saving ? "저장 중…" : "저장"}</button></div>
   </form></div>;
+}
+
+function MenuOptionEditor({ options, onChange }: { options: MenuOption[]; onChange: (options: MenuOption[]) => void }) {
+  const addOption = () => {
+    if (options.length >= 12) return;
+    onChange([...options, { id: crypto.randomUUID(), name: "", priceDelta: 0 }]);
+  };
+  const updateOption = (id: string, update: Partial<MenuOption>) => onChange(options.map((option) => option.id === id ? { ...option, ...update } : option));
+  return <fieldset className="menu-option-editor">
+    <legend><span><strong>추가 옵션</strong><small>손님이 원하는 항목을 여러 개 선택할 수 있어요.</small></span><button type="button" onClick={addOption} disabled={options.length >= 12}><Plus size={14} /> 옵션 추가</button></legend>
+    {options.length === 0 ? <p>토핑, 사이즈업처럼 추가 금액이 있는 항목을 등록해 보세요.</p> : <div className="menu-option-list">{options.map((option, index) => <div className="menu-option-row" key={option.id}>
+      <label>옵션 이름<input required maxLength={40} placeholder="예: 초코 토핑" value={option.name} onChange={(event) => updateOption(option.id, { name: event.target.value })} /></label>
+      <label>추가 금액<input required type="number" min="0" max="1000000" step="100" value={option.priceDelta} onChange={(event) => updateOption(option.id, { priceDelta: Number(event.target.value) })} /></label>
+      <button type="button" aria-label={`${index + 1}번째 옵션 삭제`} onClick={() => onChange(options.filter((candidate) => candidate.id !== option.id))}><X size={16} /></button>
+    </div>)}</div>}
+  </fieldset>;
 }
 
 function TablesView({ team, tables, onConfigure, onRotate }: { team: TeamIdentity; tables: FestivalTable[]; onConfigure: (count: number) => Promise<boolean>; onRotate: (table: FestivalTable) => void }) {

@@ -23,12 +23,16 @@ const snapshotSchema = z.object({
     status: z.enum(["PENDING_PAYMENT", "PAID", "COOKING", "READY", "SERVED", "CANCELLED"]),
     payment_status: z.enum(["UNPAID", "CUSTOMER_MARKED_TRANSFERRED", "CONFIRMED", "REJECTED"]),
     created_at: z.string(),
-    items: z.array(z.object({ menu_name: z.string(), quantity: z.number().int().positive() })),
+    items: z.array(z.object({
+      menu_name: z.string(), quantity: z.number().int().positive(),
+      selected_options: z.array(z.object({ name: z.string(), price_delta: z.number().int().nonnegative() })).default([]),
+    })),
   })),
   menu: z.array(z.object({
     id: z.string().uuid(), name: z.string(), description: z.string(), price: z.number().int().nonnegative(), category: z.string(),
     status: z.enum(["AVAILABLE", "SOLD_OUT", "HIDDEN", "ARCHIVED"]), stock_quantity: z.number().int().nonnegative(),
     reserved_quantity: z.number().int().nonnegative(), sold_quantity: z.number().int().nonnegative(),
+    options: z.array(z.object({ id: z.string().uuid(), name: z.string(), price_delta: z.number().int().nonnegative() })).default([]),
   })),
   tables: z.array(z.object({ id: z.string().uuid(), table_number: z.number().int().positive(), qr_token: z.string(), is_active: z.boolean() })),
   categories: z.array(z.string()),
@@ -95,7 +99,11 @@ function relativeTime(createdAt: string): string { const minutes = Math.max(0, M
 function mapOrder(row: DbOrder): DemoOrder {
   return { id: row.id, orderNumber: row.order_number, fulfillmentType: row.fulfillment_type, tableNumber: row.table_number,
     customerName: row.customer_name, customerPhone: row.customer_phone,
-    items: row.items.map((item) => ({ name: item.menu_name, quantity: item.quantity })), totalAmount: row.total_amount,
+    items: row.items.map((item) => ({
+      name: item.menu_name,
+      quantity: item.quantity,
+      selectedOptions: item.selected_options.map((option) => ({ name: option.name, priceDelta: option.price_delta })),
+    })), totalAmount: row.total_amount,
     orderStatus: row.status, paymentStatus: row.payment_status, orderedAt: relativeTime(row.created_at) };
 }
 
@@ -103,7 +111,8 @@ function mapMenu(row: DbMenu): MenuItem {
   const emojiByCategory: Record<string, string> = { "안주": "🥘", "식사": "🍜", "간식": "🥔", "음료": "🍹" };
   return { id: row.id, name: row.name, description: row.description, price: row.price, category: row.category as MenuCategory,
     status: row.stock_quantity === 0 ? "SOLD_OUT" : row.status, stockQuantity: row.stock_quantity,
-    reservedQuantity: row.reserved_quantity, soldQuantity: row.sold_quantity, emoji: emojiByCategory[row.category] ?? "🍽️" };
+    reservedQuantity: row.reserved_quantity, soldQuantity: row.sold_quantity, emoji: emojiByCategory[row.category] ?? "🍽️",
+    options: row.options.map((option) => ({ id: option.id, name: option.name, priceDelta: option.price_delta })) };
 }
 
 function mapTable(row: DbTable): FestivalTable { return { id: row.id, tableNumber: row.table_number, qrToken: row.qr_token, isActive: row.is_active } }

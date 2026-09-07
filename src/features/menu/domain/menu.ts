@@ -4,6 +4,12 @@ export type MenuStatus = "AVAILABLE" | "SOLD_OUT" | "HIDDEN" | "ARCHIVED";
 // not limited to the four demo categories.
 export type MenuCategory = string;
 
+export interface MenuOption {
+  id: string;
+  name: string;
+  priceDelta: number;
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -16,6 +22,7 @@ export interface MenuItem {
   soldQuantity: number;
   badge?: string;
   emoji: string;
+  options: MenuOption[];
 }
 
 export interface MenuDraft {
@@ -25,6 +32,7 @@ export interface MenuDraft {
   category: string;
   status: MenuStatus;
   stockQuantity: number;
+  options: MenuOption[];
 }
 
 export function isOrderable(item: MenuItem, quantity = 1): boolean {
