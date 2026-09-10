@@ -81,11 +81,11 @@ test("TABLE BATTLE 마이그레이션은 QR 기반 참가, 중복 방지, 서버
   assert.match(sql, /grant execute on function public\.request_table_battle_participation/i);
 });
 
-test("TABLE BATTLE 보강은 사전 검증·시간 점수·숨긴 지뢰판을 강제한다", async () => {
+test("TABLE BATTLE 보강은 운영자 정답·시간 점수·숨긴 지뢰판을 강제한다", async () => {
   const rules = await readFile(new URL("../supabase/migrations/20260910120000_refine_table_battle_game_rules.sql", import.meta.url), "utf8");
-  const dictionary = await readFile(new URL("../src/features/table-battle/infrastructure/korean-dictionary.ts", import.meta.url), "utf8");
-  assert.match(dictionary, /krdict\.korean\.go\.kr\/api\/search/i);
-  assert.match(dictionary, /partOfSpeech === "명사"/);
+  const dictionaryFreeRules = await readFile(new URL("../supabase/migrations/20260910140000_remove_table_battle_dictionary_dependency.sql", import.meta.url), "utf8");
+  assert.match(dictionaryFreeRules, /jsonb_array_elements_text\(v_round\.accepted_answers\)/);
+  assert.doesNotMatch(dictionaryFreeRules, /p_dictionary_verified/);
   assert.match(rules, /word_score integer not null default 0/i);
   assert.match(rules, /submission_ends_at timestamptz/i);
   assert.match(rules, /table_battle_elimination_count/i);

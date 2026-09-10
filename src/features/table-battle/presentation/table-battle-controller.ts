@@ -3,7 +3,6 @@ import { invalidInput, serviceUnavailable } from "@/src/shared/errors/app-error"
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
 import { signTableBattleRequest } from "@/src/shared/security/request-signing";
 import { SupabaseTableBattleGateway } from "@/src/features/table-battle/infrastructure/supabase-table-battle-gateway";
-import { isOfficialKoreanNoun } from "@/src/features/table-battle/infrastructure/korean-dictionary";
 import { tableBattleBombTransferSchema, tableBattleFloorChoiceSchema, tableBattleJoinSchema, tableBattleStateQuerySchema, tableBattleWordAnswerSchema } from "@/src/features/table-battle/presentation/schemas";
 
 function publicGateway() {
@@ -31,8 +30,7 @@ export function joinTableBattleController(request: Request) {
 export function submitTableBattleWordAnswerController(request: Request) {
   return handleController(async () => {
     const command = await parseJson(request, tableBattleWordAnswerSchema, "정답을 다시 확인해 주세요.");
-    if (!await isOfficialKoreanNoun(command.answer)) throw invalidInput("국립국어원 한국어기초사전에 등재된 명사만 입력할 수 있어요.");
-    return { body: await publicGateway().submitWordAnswer(command.qrToken, command.answer, true, await signTableBattleRequest(request, "word", command.qrToken)) };
+    return { body: await publicGateway().submitWordAnswer(command.qrToken, command.answer, await signTableBattleRequest(request, "word", command.qrToken)) };
   });
 }
 

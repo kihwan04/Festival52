@@ -46,9 +46,9 @@ export class SupabaseTableBattleGateway {
     });
   }
 
-  async submitWordAnswer(qrToken: string, answer: string, dictionaryVerified: boolean, proof: SignedRequestProof): Promise<TableBattleState> {
+  async submitWordAnswer(qrToken: string, answer: string, proof: SignedRequestProof): Promise<TableBattleState> {
     return this.call("submit_table_battle_word_answer", {
-      p_qr_token: qrToken, p_answer: answer, p_dictionary_verified: dictionaryVerified,
+      p_qr_token: qrToken, p_answer: answer,
       p_rate_key_hash: proof.rateKeyHash, p_request_timestamp: proof.requestTimestamp, p_signature: proof.signature,
     });
   }
