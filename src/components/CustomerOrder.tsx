@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ArrowLeft, Check, ChefHat, ChevronRight, Copy, PackageCheck, Minus, Plus, ShoppingBag, Store, UtensilsCrossed, WalletCards, X } from "lucide-react";
+import { ArrowLeft, Check, ChefHat, ChevronRight, Copy, PackageCheck, Minus, Plus, ShoppingBag, Store, Swords, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU } from "@/src/shared/demo-data";
 import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
 import { publicOrderProgressStep, publicOrderStatusMessage, type FulfillmentType, type PublicOrder } from "@/src/features/orders/domain/order";
@@ -221,6 +221,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
 
       <section className="menu-intro"><p>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장 주문"}</p><h1>오늘 뭐 먹을까요?</h1><span>{acceptingOrders ? "축제의 밤을 더 맛있게 즐겨보세요." : `${storeSettings.operatingHours} 운영 · 현재 새 주문을 준비하고 있어요.`}</span></section>
       {!acceptingOrders && <div className="store-closed-banner"><Store size={19} /><div><strong>지금은 주문을 받고 있지 않아요</strong><small>메뉴는 미리 볼 수 있고, 영업을 시작하면 주문 버튼이 열립니다.</small></div></div>}
+      {fulfillment === "DINE_IN" && canDineIn && <a className="table-battle-entry" href={`/t/${encodeURIComponent(qrToken ?? "")}/battle`}><span><Swords size={20} /></span><div><small>TABLE {tableNumber} EXCLUSIVE</small><strong>TABLE BATTLE</strong><em>테이블 대항전 참여하기 <ChevronRight size={15} /></em></div></a>}
       <div className="category-tabs" role="tablist" aria-label="메뉴 분류">{categories.map((item) => <button type="button" role="tab" aria-selected={category === item} className={category === item ? "active" : ""} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div>
 
       <section className="menu-grid" aria-label="메뉴 목록">

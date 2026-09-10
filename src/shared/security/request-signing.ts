@@ -107,6 +107,14 @@ export async function signPushSubscription(
   return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
 }
 
+export async function signTableBattleRequest(request: Request, action: "state" | "join" | "word" | "floor" | "bomb", qrToken: string): Promise<SignedRequestProof> {
+  const secret = signingSecret();
+  const rateKeyHash = await hmacHex(secret, `table-battle-rate-v1|${trustedClientAddress(request)}|${qrToken}`);
+  const requestTimestamp = Math.floor(Date.now() / 1000);
+  const message = `table-battle-${action}-v1|${requestTimestamp}|${qrToken}|${rateKeyHash}`;
+  return { rateKeyHash, requestTimestamp, signature: await hmacHex(secret, message) };
+}
+
 function signingSecret(): string {
   const secret = process.env.FESTIVAL_REQUEST_SIGNING_SECRET?.trim();
   if (!secret || secret.length < 32) throw serviceUnavailable("요청 보안 설정을 확인하고 있습니다. 잠시 후 다시 시도해 주세요.");

@@ -15,6 +15,7 @@ import { isStoreConfigured } from "../src/features/settings/domain/store-setting
 import { combineDailySales, getSeoulDateKey, shiftDateKey } from "../src/features/admin/domain/admin-snapshot.ts";
 import { createOrderSchema } from "../src/features/orders/presentation/schemas.ts";
 import { normalizeAllowedPushEndpoint } from "../src/features/push/domain/push-subscription.ts";
+import { canPlayBattleRound, isBattleRegistrationOpen, remainingEligibilityAmount } from "../src/features/table-battle/domain/table-battle.ts";
 
 const menu = [
   { id: "menu-1", name: "축제 국수", price: 6000, status: "AVAILABLE", stockQuantity: 3, options: [{ id: "option-1", name: "곱빼기", priceDelta: 1000 }] },
@@ -53,6 +54,59 @@ test("테이블 주문에는 테이블이 필요하고 포장 주문에는 필�
   assert.throws(() => validateFulfillment("DINE_IN", null), /테이블/);
   assert.doesNotThrow(() => validateFulfillment("DINE_IN", "table-7"));
   assert.doesNotThrow(() => validateFulfillment("TAKEOUT", null));
+});
+
+test("TABLE BATTLE은 결제 완료 금액과 승인 상태를 모두 요구한다", () => {
+  const base = {
+    tableNumber: 3, eligibleAmount: 7500, participant: null, currentRound: null, bomb: null, winner: null, serverNow: "",
+    event: { id: "00000000-0000-4000-8000-000000000018", title: "18:00 게임", status: "REGISTRATION_OPEN", startsAt: null, registrationClosesAt: null, minimumOrderAmount: 10000, minimumParticipants: 2 },
+  };
+  assert.equal(isBattleRegistrationOpen(base), false);
+  assert.equal(remainingEligibilityAmount(base), 2500);
+  assert.equal(isBattleRegistrationOpen({ ...base, eligibleAmount: 10000 }), true);
+  assert.equal(canPlayBattleRound({ ...base, eligibleAmount: 10000, event: { ...base.event, status: "WORD_QUIZ" }, participant: { status: "APPROVED", teamName: "감자단", eligibleAmountSnapshot: 10000, eliminatedRound: null, wordScore: 0 } }), true);
+  assert.equal(canPlayBattleRound({ ...base, eligibleAmount: 10000, event: { ...base.event, status: "WORD_QUIZ" }, participant: { status: "PENDING", teamName: "감자단", eligibleAmountSnapshot: 10000, eliminatedRound: null, wordScore: 0 } }), false);
+});
+
+test("TABLE BATTLE 마이그레이션은 QR 기반 참가, 중복 방지, 서버 판정을 강제한다", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20260910093000_add_table_battle.sql", import.meta.url), "utf8");
+  assert.match(sql, /unique \(event_id, table_id\)/i);
+  assert.match(sql, /fulfillment_type = 'DINE_IN'/i);
+  assert.match(sql, /payment\.status = 'CONFIRMED'/i);
+  assert.match(sql, /table_battle_context\(p_qr_token\)/i);
+  assert.match(sql, /for update/i);
+  assert.match(sql, /p_expected_version/i);
+  assert.match(sql, /owner_participant_id <> v_source\.id/i);
+  assert.match(sql, /enable row level security/i);
+  assert.match(sql, /grant execute on function public\.request_table_battle_participation/i);
+});
+
+test("TABLE BATTLE 보강은 사전 검증·시간 점수·숨긴 지뢰판을 강제한다", async () => {
+  const rules = await readFile(new URL("../supabase/migrations/20260910120000_refine_table_battle_game_rules.sql", import.meta.url), "utf8");
+  const dictionary = await readFile(new URL("../src/features/table-battle/infrastructure/korean-dictionary.ts", import.meta.url), "utf8");
+  assert.match(dictionary, /krdict\.korean\.go\.kr\/api\/search/i);
+  assert.match(dictionary, /partOfSpeech === "명사"/);
+  assert.match(rules, /word_score integer not null default 0/i);
+  assert.match(rules, /submission_ends_at timestamptz/i);
+  assert.match(rules, /table_battle_elimination_count/i);
+  assert.match(rules, /random_lucky_floor_map\(3, 3\)/i);
+  assert.match(rules, /'floor_map', null/i);
+  assert.match(rules, /p_tile_x not between 0 and 2/i);
+  assert.match(rules, /floor_selection_ends_at,[\s\S]*?clock_timestamp\(\) \+ make_interval/i);
+});
+
+test("TABLE BATTLE 결승 보강은 최종 1팀·만료 폭탄 차단·운영자 우승 확정을 강제한다", async () => {
+  const finale = await readFile(new URL("../supabase/migrations/20260910133000_harden_table_battle_finale.sql", import.meta.url), "utf8");
+  const orders = await readFile(new URL("../src/features/orders/presentation/order-controller.ts", import.meta.url), "utf8");
+  assert.match(finale, /v_eliminate := least\(v_missing, greatest\(v_alive - 1, 0\)\)/i);
+  assert.match(finale, /if v_alive <= 1 then[\s\S]*?v_safe := true/i);
+  assert.match(finale, /v_bomb\.explodes_at <= clock_timestamp\(\)/i);
+  assert.match(finale, /create or replace function private\.advance_table_battle_bomb/i);
+  assert.match(finale, /if v_survivors = 1 then[\s\S]*?finish_table_battle_if_last/i);
+  assert.match(finale, /select_table_battle_winner/i);
+  assert.match(finale, /for update/i);
+  assert.match(finale, /grant execute on function public\.select_table_battle_winner\(uuid, uuid\) to authenticated/i);
+  assert.doesNotMatch(orders, /table_battle/i);
 });
 
 test("고객 입금 표시는 결제를 확정하지 않는다", () => {
