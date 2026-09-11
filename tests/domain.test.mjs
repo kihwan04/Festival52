@@ -109,6 +109,17 @@ test("TABLE BATTLE 결승 보강은 최종 1팀·만료 폭탄 차단·운영자
   assert.doesNotMatch(orders, /table_battle/i);
 });
 
+test("TABLE BATTLE 운영은 관리자가 즉시 열고 1만원 이상 결제 테이블만 승인한다", async () => {
+  const manual = await readFile(new URL("../supabase/migrations/20260910150000_add_manual_table_battle_operations.sql", import.meta.url), "utf8");
+  const adminController = await readFile(new URL("../src/features/table-battle/presentation/admin-table-battle-controller.ts", import.meta.url), "utf8");
+  assert.match(manual, /create_table_battle_event_now/i);
+  assert.match(manual, /greatest\(10000, v_event\.minimum_order_amount\)/i);
+  assert.match(manual, /private\.table_battle_eligible_amount/i);
+  assert.match(manual, /grant execute on function public\.review_table_battle_participant/i);
+  assert.match(adminController, /action: z\.literal\("REVIEW"\)/);
+  assert.match(adminController, /action: z\.literal\("START_ROUND"\)/);
+});
+
 test("고객 입금 표시는 결제를 확정하지 않는다", () => {
   assert.equal(customerClaimsTransfer("UNPAID"), "CUSTOMER_MARKED_TRANSFERRED");
 });

@@ -65,11 +65,11 @@ const DEMO_SALES: SalesSummary = {
 
 const DEMO_DAILY_SALES: DailySalesSummary[] = [{ date: getSeoulDateKey(), ...DEMO_SALES }];
 const DEMO_TABLE_BATTLE: AdminTableBattleState = {
-  event: { id: "00000000-0000-4000-8000-000000000018", title: "18:00 TABLE BATTLE", status: "BOMB_GAME", rewardName: "버갈튀 1개 무료", winnerTableId: null },
+  event: { id: "00000000-0000-4000-8000-000000000018", title: "18:00 TABLE BATTLE", status: "BOMB_GAME", rewardName: "버갈튀 1개 무료", winnerTableId: null, minimumOrderAmount: 10000, roundCount: 3, lastRoundType: "BOMB_GAME" },
   participants: [
-    { id: "00000000-0000-4000-8000-000000000007", tableNumber: 7, teamName: "불타는 감자단", status: "APPROVED", wordScore: 11 },
-    { id: "00000000-0000-4000-8000-000000000003", tableNumber: 3, teamName: "치즈러버", status: "APPROVED", wordScore: 9 },
-    { id: "00000000-0000-4000-8000-000000000005", tableNumber: 5, teamName: "개발자살려", status: "ELIMINATED", wordScore: 4 },
+    { id: "00000000-0000-4000-8000-000000000007", tableNumber: 7, teamName: "불타는 감자단", status: "APPROVED", wordScore: 11, eligibleAmount: 20000 },
+    { id: "00000000-0000-4000-8000-000000000003", tableNumber: 3, teamName: "치즈러버", status: "APPROVED", wordScore: 9, eligibleAmount: 14000 },
+    { id: "00000000-0000-4000-8000-000000000005", tableNumber: 5, teamName: "개발자살려", status: "ELIMINATED", wordScore: 4, eligibleAmount: 10000 },
   ],
 };
 const DEMO_TABLE_DAILY_SALES: DailyTableSalesSummary[] = [
@@ -113,6 +113,7 @@ export function AdminDashboard({
   const [battleState, setBattleState] = useState<AdminTableBattleState>(DEMO_TABLE_BATTLE);
   const [battleLoading, setBattleLoading] = useState(false);
   const refreshInFlight = useRef(false);
+  const battleInFlight = useRef(false);
 
   const applySnapshot = useCallback((snapshot: AdminSnapshot) => {
     setTeam(snapshot.team);
@@ -179,6 +180,8 @@ export function AdminDashboard({
 
   const refreshBattle = useCallback(async () => {
     if (demoMode) return;
+    if (battleInFlight.current) return;
+    battleInFlight.current = true;
     setBattleLoading(true);
     try {
       setBattleState(await adminRequest<AdminTableBattleState>("/api/admin/table-battle"));
@@ -186,6 +189,7 @@ export function AdminDashboard({
       showNotice(adminErrorMessage(error, "TABLE BATTLE 운영 현황을 불러오지 못했습니다."));
     } finally {
       setBattleLoading(false);
+      battleInFlight.current = false;
     }
   }, [demoMode, showNotice]);
 
@@ -364,19 +368,31 @@ export function AdminDashboard({
     showNotice("새 QR이 발급되었습니다.");
   };
 
+  const runBattleOperation = async (command: Record<string, unknown>, successMessage: string, demoUpdate?: () => void) => {
+    if (battleInFlight.current) return;
+    battleInFlight.current = true;
+    setBattleLoading(true);
+    try {
+      if (demoMode) {
+        demoUpdate?.();
+      } else {
+        setBattleState(await adminRequest<AdminTableBattleState>("/api/admin/table-battle", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) }));
+      }
+      showNotice(successMessage);
+    } catch (error) { showNotice(adminErrorMessage(error, "게임 운영 요청을 처리하지 못했습니다."));
+    } finally {
+      setBattleLoading(false);
+      battleInFlight.current = false;
+    }
+  };
+
   const selectBattleWinner = async (participantId: string) => {
     const participant = battleState.participants.find((item) => item.id === participantId);
     const event = battleState.event;
     if (!event || !participant || !window.confirm(`TABLE ${participant.tableNumber} · ${participant.teamName}을(를) 1등으로 확정할까요? 게임은 즉시 종료됩니다.`)) return;
-    if (demoMode) {
+    await runBattleOperation({ action: "SELECT_WINNER", eventId: event.id, participantId }, `TABLE ${participant.tableNumber}을(를) 1등으로 확정했습니다.`, () => {
       setBattleState((current) => ({ ...current, event: current.event ? { ...current.event, status: "FINISHED", winnerTableId: participantId } : null, participants: current.participants.map((item) => ({ ...item, status: item.id === participantId ? "WINNER" : item.status === "APPROVED" ? "ELIMINATED" : item.status })) }));
-      showNotice(`TABLE ${participant.tableNumber}을(를) 1등으로 확정했습니다.`);
-      return;
-    }
-    try {
-      setBattleState(await adminRequest<AdminTableBattleState>("/api/admin/table-battle", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventId: event.id, participantId }) }));
-      showNotice(`TABLE ${participant.tableNumber}을(를) 1등으로 확정했습니다.`);
-    } catch (error) { showNotice(adminErrorMessage(error, "우승 테이블을 확정하지 못했습니다.")); }
+    });
   };
 
   const pendingPayments = orders.filter((order) => order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED").length;
@@ -457,7 +473,7 @@ export function AdminDashboard({
           <section className="orders-grid" aria-label="주문 목록">
             {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>해당 주문을 모두 처리했어요</strong><span>새 주문이 들어오면 자동으로 표시됩니다.</span></div> : visibleOrders.map((order) => <OrderCard order={order} onAdvance={advance} onCancel={cancel} key={order.id} />)}
           </section>
-        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} tableDailySales={tableDailySales} tables={tables} /> : view === "battle" ? <TableBattleOperations state={battleState} loading={battleLoading} onRefresh={() => void refreshBattle()} onSelectWinner={(participantId) => void selectBattleWinner(participantId)} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
+        </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} tableDailySales={tableDailySales} tables={tables} /> : view === "battle" ? <TableBattleOperations state={battleState} loading={battleLoading} onRefresh={() => void refreshBattle()} onSelectWinner={(participantId) => void selectBattleWinner(participantId)} onOperate={(command, successMessage, demoUpdate) => void runBattleOperation(command, successMessage, demoUpdate)} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
       {!online && <div className="admin-offline" role="alert"><AlertTriangle size={17} /> 네트워크 연결이 끊겼습니다. 기존 화면은 유지되며 연결 후 다시 동기화됩니다.</div>}
       {notice && <div className="admin-toast"><Check size={17} /> {notice}</div>}
@@ -465,18 +481,41 @@ export function AdminDashboard({
   );
 }
 
-function TableBattleOperations({ state, loading, onRefresh, onSelectWinner }: { state: AdminTableBattleState; loading: boolean; onRefresh: () => void; onSelectWinner: (participantId: string) => void }) {
+function TableBattleOperations({ state, loading, onRefresh, onSelectWinner, onOperate }: { state: AdminTableBattleState; loading: boolean; onRefresh: () => void; onSelectWinner: (participantId: string) => void; onOperate: (command: Record<string, unknown>, successMessage: string, demoUpdate?: () => void) => void }) {
   const event = state.event;
-  if (!event) return <section className="battle-admin-empty"><Swords size={30} /><h2>진행 중인 TABLE BATTLE이 없어요</h2><p>게임을 만들고 참가 팀을 승인하면 이곳에서 마지막 우승 팀을 확정할 수 있습니다.</p></section>;
+  const [prompt, setPrompt] = useState("");
+  const [hint, setHint] = useState("");
+  const [answers, setAnswers] = useState("");
+  if (!event) return <section className="battle-admin-empty"><Swords size={30} /><h2>지금 바로 게임을 열 수 있어요</h2><p>참가 접수가 즉시 열리고, 1만원 이상 결제한 테이블만 관리자 승인 대상으로 표시됩니다.</p><button type="button" className="battle-admin-primary" disabled={loading} onClick={() => onOperate({ action: "CREATE_EVENT", title: "TABLE BATTLE" }, "TABLE BATTLE 참가 접수를 열었습니다.")}>참가 접수 열기</button></section>;
   const alive = state.participants.filter((participant) => participant.status === "APPROVED");
   const completed = event.status === "FINISHED";
+  const canStartQuiz = !completed && ["REGISTRATION_OPEN", "REGISTRATION_LOCKED", "READY"].includes(event.status) && event.roundCount === 0 && alive.length >= 2;
+  const canStartFloor = !completed && event.status === "READY" && event.lastRoundType === "WORD_QUIZ" && alive.length >= 2;
+  const canStartBomb = !completed && event.status === "READY" && event.lastRoundType === "FLOOR_GAME" && alive.length >= 2;
+  const startQuiz = () => {
+    const registeredAnswers = answers.split(",").map((value) => value.trim()).filter(Boolean);
+    if (!prompt.trim() || registeredAnswers.length === 0) return;
+    onOperate({ action: "START_ROUND", eventId: event.id, roundType: "WORD_QUIZ", prompt, hint, answers: registeredAnswers }, "초성퀴즈를 바로 시작했습니다.", () => undefined);
+  };
   return <section className="battle-admin-view">
     <header className="battle-admin-head"><div><span>LIVE GAME CONTROL</span><h2>{event.title}</h2><p>진행 상태 · <strong>{event.status.replaceAll("_", " ")}</strong> · 생존 {alive.length}팀</p></div><button className="refresh-button" type="button" disabled={loading} onClick={onRefresh}><RefreshCw size={16} /> 새로고침</button></header>
     <div className="battle-admin-rule"><Swords size={19} /><span><strong>안전한 종료 규칙 적용 중</strong><small>동시 선택·폭탄 만료·미선택 상황에서도 최종 1팀만 우승합니다. 게임 중 주문 접수는 계속됩니다.</small></span></div>
-    <div className="battle-admin-list">{state.participants.map((participant) => <article key={participant.id} className={participant.status.toLowerCase()}><div><span>TABLE {participant.tableNumber}</span><strong>{participant.teamName}</strong><small>초성퀴즈 {participant.wordScore}점 · {participant.status === "APPROVED" ? "생존" : participant.status === "WINNER" ? "우승" : "탈락"}</small></div>{participant.status === "WINNER" ? <b><Crown size={16} /> 1등 확정</b> : !completed && <button type="button" onClick={() => onSelectWinner(participant.id)}><Crown size={16} /> 1등으로 확정</button>}</article>)}</div>
+    <div className="battle-admin-actions">
+      {event.status === "SCHEDULED" && <button type="button" className="battle-admin-primary" disabled={loading} onClick={() => onOperate({ action: "SET_REGISTRATION", eventId: event.id, status: "REGISTRATION_OPEN" }, "참가 접수를 열었습니다.", () => undefined)}>참가 접수 열기</button>}
+      {event.status === "REGISTRATION_OPEN" && <button type="button" className="battle-admin-secondary" disabled={loading} onClick={() => onOperate({ action: "SET_REGISTRATION", eventId: event.id, status: "REGISTRATION_LOCKED" }, "새 참가 접수를 마감했습니다.", () => undefined)}>새 참가 접수 마감</button>}
+      {event.status === "REGISTRATION_LOCKED" && <button type="button" className="battle-admin-secondary" disabled={loading} onClick={() => onOperate({ action: "SET_REGISTRATION", eventId: event.id, status: "READY" }, "승인된 테이블을 게임 대기방으로 보냈습니다.", () => undefined)}>승인팀 대기방 열기</button>}
+      {canStartQuiz && <div className="battle-admin-quiz"><strong>ROUND 1 · 초성퀴즈</strong><input value={prompt} disabled={loading} onChange={(input) => setPrompt(input.target.value)} maxLength={80} placeholder="문제 초성 예: ㅂ ㄱ ㅌ" /><input value={hint} disabled={loading} onChange={(input) => setHint(input.target.value)} maxLength={120} placeholder="힌트 (선택)" /><input value={answers} disabled={loading} onChange={(input) => setAnswers(input.target.value)} maxLength={300} placeholder="정답, 복수 정답은 쉼표로 구분" /><button type="button" className="battle-admin-primary" disabled={loading || !prompt.trim() || !answers.trim()} onClick={startQuiz}>초성퀴즈 바로 시작</button></div>}
+      {canStartFloor && <button type="button" className="battle-admin-primary" disabled={loading} onClick={() => onOperate({ action: "START_ROUND", eventId: event.id, roundType: "FLOOR_GAME" }, "행운의 지뢰밭을 시작했습니다.", () => undefined)}>ROUND 2 · 지뢰밭 바로 시작</button>}
+      {canStartBomb && <button type="button" className="battle-admin-primary" disabled={loading} onClick={() => onOperate({ action: "START_ROUND", eventId: event.id, roundType: "BOMB_GAME" }, "폭탄 돌리기를 시작했습니다.", () => undefined)}>FINAL · 폭탄 돌리기 시작</button>}
+    </div>
+    <div className="battle-admin-list">{state.participants.map((participant) => {
+      const eligible = participant.eligibleAmount >= event.minimumOrderAmount;
+      return <article key={participant.id} className={participant.status.toLowerCase()}><div><span>TABLE {participant.tableNumber}</span><strong>{participant.teamName}</strong><small>결제 완료 {formatWon(participant.eligibleAmount)} / 참가 기준 {formatWon(event.minimumOrderAmount)} · 초성퀴즈 {participant.wordScore}점</small></div>{participant.status === "PENDING" ? <div className="battle-admin-review"><button type="button" disabled={loading || !eligible} title={eligible ? "" : "1만원 이상 결제 완료 주문이 필요합니다."} onClick={() => onOperate({ action: "REVIEW", eventId: event.id, participantId: participant.id, decision: "APPROVE" }, `TABLE ${participant.tableNumber} 참가를 승인했습니다.`, () => undefined)}><Check size={16} /> 승인</button><button type="button" className="reject" disabled={loading} onClick={() => onOperate({ action: "REVIEW", eventId: event.id, participantId: participant.id, decision: "REJECT" }, `TABLE ${participant.tableNumber} 참가를 거절했습니다.`, () => undefined)}><X size={16} /> 거절</button></div> : participant.status === "WINNER" ? <b><Crown size={16} /> 1등 확정</b> : !completed && ["APPROVED", "ELIMINATED"].includes(participant.status) && <button type="button" disabled={loading} onClick={() => onSelectWinner(participant.id)}><Crown size={16} /> 1등으로 확정</button>}</article>;
+    })}</div>
     {event.rewardName && <p className="battle-admin-reward">우승 상품 · {event.rewardName}</p>}
   </section>;
 }
+
 
 function SalesView({ totalSales, dailySales, tableDailySales, tables }: { totalSales: SalesSummary; dailySales: DailySalesSummary[]; tableDailySales: DailyTableSalesSummary[]; tables: FestivalTable[] }) {
   const today = getSeoulDateKey();

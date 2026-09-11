@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Bomb, Check, CircleAlert, Clock3, Crown, LoaderCircle, Send, Swords, Trophy } from "lucide-react";
-import { canPlayBattleRound, isBattleRegistrationOpen, remainingEligibilityAmount, type TableBattleState } from "@/src/features/table-battle/domain/table-battle";
+import { canPlayBattleRound, type TableBattleState } from "@/src/features/table-battle/domain/table-battle";
 
 interface TableBattleProps {
   qrToken: string;
@@ -111,19 +111,20 @@ export function TableBattle({ qrToken, tableNumber, demoMode = false }: TableBat
 
 function Registration({ state, qrToken, teamName, setTeamName, joining, join }: { state: TableBattleState; qrToken: string; teamName: string; setTeamName: (value: string) => void; joining: boolean; join: () => void }) {
   const event = state.event!;
-  const eligible = isBattleRegistrationOpen(state);
-  const missing = remainingEligibilityAmount(state);
+  const minimumOrderAmount = Math.max(10_000, event.minimumOrderAmount);
+  const eligible = event.status === "REGISTRATION_OPEN" && state.participant === null && state.eligibleAmount >= minimumOrderAmount;
+  const missing = Math.max(0, minimumOrderAmount - state.eligibleAmount);
   const notOpenYet = event.status === "SCHEDULED";
   return <section className="battle-card registration-card">
     <div className="battle-event-title"><span><Clock3 size={15} /> {event.title}</span><b>{event.status === "REGISTRATION_OPEN" ? "참가 접수 중" : "게임 예정"}</b></div>
     <h2>{notOpenYet ? "참가 접수를 기다리고 있어요" : eligible ? "우리 테이블도 도전할까요?" : "참여 조건을 확인해 주세요"}</h2>
-    <p>결제 완료된 테이블 주문 금액이 기준을 넘으면 참가할 수 있어요.</p>
-    <div className={`battle-amount ${eligible ? "ready" : ""}`}><span>현재 결제 완료 금액</span><strong>{state.eligibleAmount.toLocaleString("ko-KR")}<small> / {event.minimumOrderAmount.toLocaleString("ko-KR")}원</small></strong></div>
+    <p>테이블 주문을 결제 완료 기준 <strong>1만원 이상</strong> 하면 참가할 수 있어요.</p>
+    <div className={`battle-amount ${eligible ? "ready" : ""}`}><span>현재 결제 완료 금액</span><strong>{state.eligibleAmount.toLocaleString("ko-KR")}<small> / {minimumOrderAmount.toLocaleString("ko-KR")}원</small></strong></div>
     {state.participant ? <ParticipantSummary state={state} /> : notOpenYet ? <div className="battle-shortfall">운영자가 참가 접수를 열면 이 화면에서 바로 신청할 수 있어요.</div> : eligible ? <form className="battle-join-form" onSubmit={(event) => { event.preventDefault(); join(); }}>
       <label>팀 이름<input value={teamName} minLength={2} maxLength={30} placeholder="예: 불타는 감자단" onChange={(event) => setTeamName(event.target.value)} /></label>
       <button className="battle-primary" type="submit" disabled={joining || teamName.trim().length < 2}>{joining ? <><LoaderCircle className="spin" size={17} /> 신청 중…</> : <><Swords size={17} /> 참가 신청</>}</button>
     </form> : <><div className="battle-shortfall"><span>{missing.toLocaleString("ko-KR")}원</span> 더 주문하면 참가할 수 있어요.</div><a className="battle-secondary" href={`/t/${encodeURIComponent(qrToken)}`}>메뉴 보러가기</a></>}
-    <small className="battle-footnote">포장 주문과 결제 대기·취소 주문은 참가 금액에 포함되지 않아요.</small>
+    <small className="battle-footnote">1만원 이상 결제 완료된 테이블 주문만 인정되며, 포장·결제 대기·취소 주문은 포함되지 않아요.</small>
   </section>;
 }
 
