@@ -32,3 +32,13 @@ export const createOrderSchema = z.object({
 
 export const transferClaimSchema = z.object({ publicToken: z.string().uuid() });
 export const adminOrderActionSchema = z.object({ action: z.enum(["CONFIRM_PAYMENT", "START_COOKING", "MARK_READY", "MARK_SERVED", "CANCEL"]) });
+export const ownerManualOrderSchema = z.object({
+  clientRequestId: z.string().uuid(),
+  label: z.string().trim().min(1).max(80),
+  amount: z.number().int().min(100).max(10_000_000),
+  fulfillmentType: z.enum(["DINE_IN", "TAKEOUT"]),
+  tableNumber: z.number().int().positive().max(200).nullable(),
+}).superRefine((value, context) => {
+  if (value.fulfillmentType === "DINE_IN" && value.tableNumber === null) context.addIssue({ code: z.ZodIssueCode.custom, path: ["tableNumber"], message: "테이블 번호를 선택해 주세요." });
+  if (value.fulfillmentType === "TAKEOUT" && value.tableNumber !== null) context.addIssue({ code: z.ZodIssueCode.custom, path: ["tableNumber"], message: "포장 주문에는 테이블 번호를 입력할 수 없습니다." });
+});

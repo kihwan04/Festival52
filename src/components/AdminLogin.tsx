@@ -59,7 +59,7 @@ export function AdminLogin({ allowSignup = false }: { allowSignup?: boolean }) {
 
   const signup = mode === "signup";
   return <main className="admin-login-shell"><section className={`admin-login-card ${signup ? "signup" : ""}`}>
-    <a className="login-back" href="/"><ArrowLeft size={17} /> 고객 화면</a>
+    <a className="login-back" href="/"><ArrowLeft size={17} /> 처음 화면</a>
     <div className="login-lock">{signup ? <Building2 size={27} /> : <LockKeyhole size={27} />}</div>
     <p className="login-kicker">{signup ? "NEW OPERATIONS TEAM" : "STAFF ONLY"}</p>
     <h1>{signup ? "운영팀 회원가입" : "운영자 로그인"}</h1>
@@ -86,6 +86,6 @@ export function AdminLogin({ allowSignup = false }: { allowSignup?: boolean }) {
       {error && <p className="login-error" role="alert">{error}</p>}
       <button type="submit" disabled={loading}>{loading ? "확인 중…" : signup ? "내 운영팀 만들기" : "안전하게 로그인"}</button>
     </form>
-    <small>{signup ? "가입한 팀의 데이터는 다른 운영팀과 데이터베이스에서 분리됩니다." : "신규 가입은 잠겨 있으며 Supabase Auth와 팀별 서버 권한으로 보호됩니다."}</small>
+    <small>{signup ? "가입한 팀의 데이터는 다른 운영팀과 데이터베이스에서 분리됩니다." : "신규 가입은 잠겨 있습니다. 등록된 운영자 계정으로 로그인해 주세요."}</small>
   </section></main>;
 }

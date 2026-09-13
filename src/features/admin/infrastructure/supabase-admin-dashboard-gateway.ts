@@ -94,7 +94,12 @@ export class SupabaseAdminDashboardGateway implements AdminDashboardGateway {
   }
 }
 
-function relativeTime(createdAt: string): string { const minutes = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)); return minutes === 0 ? "방금 전" : `${minutes}분 전` }
+function relativeTime(createdAt: string): string {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+  if (minutes < 60) return minutes === 0 ? "방금 전" : `${minutes}분 전`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}시간 전`;
+  return new Date(createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 function mapOrder(row: DbOrder): DemoOrder {
   return { id: row.id, orderNumber: row.order_number, fulfillmentType: row.fulfillment_type, tableNumber: row.table_number,
@@ -110,7 +115,7 @@ function mapOrder(row: DbOrder): DemoOrder {
 function mapMenu(row: DbMenu): MenuItem {
   const emojiByCategory: Record<string, string> = { "안주": "🥘", "식사": "🍜", "간식": "🥔", "음료": "🍹" };
   return { id: row.id, name: row.name, description: row.description, price: row.price, category: row.category as MenuCategory,
-    status: row.stock_quantity === 0 ? "SOLD_OUT" : row.status, stockQuantity: row.stock_quantity,
+    status: row.stock_quantity === 0 && row.status === "AVAILABLE" ? "SOLD_OUT" : row.status, stockQuantity: row.stock_quantity,
     reservedQuantity: row.reserved_quantity, soldQuantity: row.sold_quantity, emoji: emojiByCategory[row.category] ?? "🍽️",
     options: row.options.map((option) => ({ id: option.id, name: option.name, priceDelta: option.price_delta })) };
 }

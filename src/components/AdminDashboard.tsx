@@ -10,11 +10,14 @@ import type { OrderStatus } from "@/src/features/orders/domain/order";
 import { emptySalesSummary, getSeoulDateKey, shiftDateKey, type AdminSnapshot, type DailySalesSummary, type DailyTableSalesSummary, type SalesSummary, type TeamIdentity } from "@/src/features/admin/domain/admin-snapshot";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
 import type { AdminTableBattleState } from "@/src/features/table-battle/presentation/admin-table-battle-controller";
+import { filterOrders, isActiveOrder, type OrderFilter, type OrderChannel } from "@/src/features/admin/domain/order-list";
+import { useDialog } from "@/src/shared/use-dialog";
 
-type Filter = "ALL" | "DINE_IN" | "TAKEOUT" | "PAYMENT" | "COOKING" | "READY";
+type Filter = OrderFilter;
 type View = "orders" | "inventory" | "tables" | "sales" | "settings" | "battle";
 type MenuDraft = Pick<MenuItem, "name" | "description" | "price" | "category" | "status" | "stockQuantity" | "options">;
 type AdminOrderResponse = { ok: true; push?: { attempted: number; delivered: number; failed: number; unavailable?: boolean } };
+type OwnerManualOrderDraft = { label: string; amount: number; fulfillmentType: "DINE_IN" | "TAKEOUT"; tableNumber: number | null; clientRequestId: string };
 
 class AdminRequestError extends Error {
   constructor(message: string, readonly status = 0) { super(message); }
@@ -23,12 +26,12 @@ class AdminRequestError extends Error {
 async function adminRequest<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, { cache: "no-store", ...init });
+    response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000), ...init });
   } catch {
     throw new AdminRequestError("네트워크 연결을 확인해 주세요. 기존 화면은 유지됩니다.");
   }
   const payload = await response.json().catch(() => null) as T | { message?: string } | null;
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     window.location.assign("/admin");
     throw new AdminRequestError("로그인이 만료되었습니다. 다시 로그인해 주세요.", response.status);
   }
@@ -46,13 +49,14 @@ function adminErrorMessage(error: unknown, fallback: string): string {
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
-  PENDING_PAYMENT: "주문 확인 중", PAID: "주문 승인", COOKING: "조리 중", READY: "조리 완료", SERVED: "완료", CANCELLED: "취소",
+  PENDING_PAYMENT: "입금 대기", PAID: "조리 대기", COOKING: "조리 중", READY: "전달 대기", SERVED: "완료", CANCELLED: "취소",
 };
 const MENU_STATUS_LABEL: Record<MenuStatus, string> = { AVAILABLE: "판매 중", SOLD_OUT: "품절", HIDDEN: "숨김", ARCHIVED: "보관" };
 
 interface AdminDashboardProps {
   initialSnapshot?: AdminSnapshot;
   demoMode?: boolean;
+  initialIsOwner?: boolean;
 }
 
 const DEMO_SALES: SalesSummary = {
@@ -93,9 +97,12 @@ const DEMO_SNAPSHOT: AdminSnapshot = {
 export function AdminDashboard({
   initialSnapshot = DEMO_SNAPSHOT,
   demoMode = true,
+  initialIsOwner = demoMode,
 }: AdminDashboardProps) {
   const [view, setView] = useState<View>("orders");
   const [filter, setFilter] = useState<Filter>("ALL");
+  const [channel, setChannel] = useState<OrderChannel>("ALL");
+  const [manualOpen, setManualOpen] = useState(false);
   const [orders, setOrders] = useState<DemoOrder[]>(initialSnapshot.orders);
   const [menu, setMenu] = useState<MenuItem[]>(initialSnapshot.menu);
   const [tables, setTables] = useState<FestivalTable[]>(initialSnapshot.tables);
@@ -110,6 +117,10 @@ export function AdminDashboard({
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
+  const [isOwner, setIsOwner] = useState(initialIsOwner);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [busyOrders, setBusyOrders] = useState<Set<string>>(new Set());
+  const orderLocks = useRef(new Set<string>());
   const [battleState, setBattleState] = useState<AdminTableBattleState>(DEMO_TABLE_BATTLE);
   const [battleLoading, setBattleLoading] = useState(false);
   const refreshInFlight = useRef(false);
@@ -139,8 +150,10 @@ export function AdminDashboard({
     setSyncing(true);
     try {
       applySnapshot(await adminRequest<AdminSnapshot>("/api/admin/snapshot"));
+      setSyncError(null);
       if (!silent) setNotice("최신 운영 현황을 불러왔습니다.");
     } catch (error) {
+      setSyncError(adminErrorMessage(error, "최신 주문을 확인하지 못했습니다."));
       if (!silent) setNotice(adminErrorMessage(error, "운영 현황을 불러오지 못했습니다."));
     } finally {
       setSyncing(false);
@@ -173,6 +186,15 @@ export function AdminDashboard({
     };
   }, []);
 
+  useEffect(() => {
+    if (demoMode) return;
+    let active = true;
+    void adminRequest<{ isOwner: boolean }>("/api/admin/owner")
+      .then((result) => { if (active) setIsOwner(result.isOwner); })
+      .catch(() => { if (active) setIsOwner(false); });
+    return () => { active = false; };
+  }, [demoMode]);
+
   const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(null), 2400);
@@ -199,18 +221,19 @@ export function AdminDashboard({
     return () => window.clearTimeout(id);
   }, [refreshBattle, view]);
 
-  const visibleOrders = useMemo(() => orders.filter((order) => {
-    if (search && !`${order.orderNumber} ${order.tableNumber ?? ""} ${order.customerName ?? ""} ${order.customerPhone ?? ""} ${order.items.map((item) => item.name).join(" ")}`.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filter === "DINE_IN" || filter === "TAKEOUT") return order.fulfillmentType === filter;
-    if (filter === "PAYMENT") return order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED";
-    if (filter === "COOKING") return order.orderStatus === "COOKING" || order.orderStatus === "PAID";
-    if (filter === "READY") return order.orderStatus === "READY";
-    return order.orderStatus !== "SERVED" && order.orderStatus !== "CANCELLED";
-  }), [filter, orders, search]);
+  const visibleOrders = useMemo(() => filterOrders(orders, filter, channel, search), [filter, channel, orders, search]);
+
+  const runOrderAction = async (id: string, action: (id: string) => Promise<void>) => {
+    if (orderLocks.current.has(id) || !online) return;
+    orderLocks.current.add(id);
+    setBusyOrders(new Set(orderLocks.current));
+    try { await action(id); }
+    finally { orderLocks.current.delete(id); setBusyOrders(new Set(orderLocks.current)); }
+  };
 
   const advance = async (id: string) => {
     const target = orders.find((order) => order.id === id);
-    if (!target || (target.orderStatus === "PENDING_PAYMENT" && target.paymentStatus !== "CUSTOMER_MARKED_TRANSFERRED")) return;
+    if (!target || !isActiveOrder(target) || (target.orderStatus === "PENDING_PAYMENT" && target.paymentStatus !== "CUSTOMER_MARKED_TRANSFERRED")) return;
     const action = target.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED" ? "CONFIRM_PAYMENT" : target.orderStatus === "PAID" ? "START_COOKING" : target.orderStatus === "COOKING" ? "MARK_READY" : "MARK_SERVED";
     let transitionNotice = "주문 상태가 반영되었습니다.";
     if (!demoMode) {
@@ -248,6 +271,21 @@ export function AdminDashboard({
       setOrders((current) => current.map((order) => order.id === id ? { ...order, orderStatus: "CANCELLED" } : order));
     }
     showNotice("주문을 취소하고 재고를 복구했습니다.");
+  };
+
+  const createManualOrder = async (draft: OwnerManualOrderDraft): Promise<boolean> => {
+    if (!isOwner) return false;
+    if (!demoMode) {
+      try {
+        await adminRequest("/api/admin/orders/manual", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
+        await refreshSnapshot(true);
+      } catch (error) { showNotice(adminErrorMessage(error, "직접 입력 주문을 저장하지 못했습니다.")); return false; }
+    } else {
+      setOrders((current) => [{ id: crypto.randomUUID(), orderNumber: `M${String(current.length + 1).padStart(3, "0")}`, fulfillmentType: draft.fulfillmentType, tableNumber: draft.tableNumber, customerName: null, customerPhone: null, items: [{ name: draft.label, quantity: 1 }], totalAmount: draft.amount, orderStatus: "SERVED", paymentStatus: "CONFIRMED", orderedAt: "방금 전" }, ...current]);
+    }
+    setFilter("HISTORY"); setChannel("ALL"); setSearch("");
+    showNotice("판매 내역을 저장했습니다. 완료·취소 내역에서 확인하세요.");
+    return true;
   };
 
   const adjustStock = async (id: string, quantityChange: number) => {
@@ -395,7 +433,7 @@ export function AdminDashboard({
     });
   };
 
-  const pendingPayments = orders.filter((order) => order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED").length;
+  const pendingPayments = orders.filter((order) => isActiveOrder(order) && order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED").length;
   const cookingCount = orders.filter((order) => order.orderStatus === "COOKING" || order.orderStatus === "PAID").length;
   const readyCount = orders.filter((order) => order.orderStatus === "READY").length;
   const title: Record<View, string> = {
@@ -446,32 +484,39 @@ export function AdminDashboard({
           <button type="button" className={view === "battle" ? "active" : ""} onClick={() => setView("battle")}><Swords size={20} /> 게임 운영</button>
           <button type="button" className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={20} /> 매장 설정</button>
         </nav>
-        <div className="sidebar-bottom"><div className="admin-profile"><span>운</span><div><strong>운영 관리자</strong><small><i /> 근무 중</small></div><ChevronRight size={17} /></div></div>
+        <div className="sidebar-bottom"><a className="customer-preview-link" href={`/s/${team.publicSlug}`} target="_blank" rel="noreferrer"><Store size={17} /> 고객 메뉴 열기 <ChevronRight size={16} /></a><div className="admin-profile"><span>{isOwner ? "주" : "운"}</span><div><strong>{isOwner ? "주인 계정" : "운영자 계정"}</strong><small>{isOwner ? "판매 입력·내역 관리 가능" : "주문·매장 운영"}</small></div></div></div>
       </aside>
 
       <section className="admin-main">
         <header className="admin-topbar">
-          <div><h1>{title[view]}</h1><p><span className="live-dot" /> {syncing ? "동기화 중" : `10초마다 동기화 · ${new Date(syncedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</p></div>
+          <div><h1>{title[view]}</h1><p className={syncError || !online ? "sync-warning" : ""}><span className="live-dot" /> {demoMode ? "체험 모드 · 실제 주문은 저장되지 않습니다" : !online ? "인터넷 연결 끊김" : syncError ? "최신 정보 확인 실패 · 재연결 중" : syncing ? "최신 주문 확인 중" : `10초마다 갱신 · 마지막 확인 ${new Date(syncedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}</p></div>
           <div className="admin-tools">{view === "orders" && <div className="admin-search"><Search size={18} /><input aria-label="주문 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="주문번호, 메뉴 검색" /></div>}<button type="button" className="icon-button" aria-label="입금 확인 주문 보기" onClick={() => { setView("orders"); setFilter("PAYMENT"); showNotice(pendingPayments ? `입금 확인이 필요한 주문 ${pendingPayments}건입니다.` : "확인할 입금 알림이 없습니다."); }}><Bell size={20} />{pendingPayments > 0 && <i />}</button></div>
         </header>
 
+        <div className="operations-bar"><span className={`store-status ${settings.isOpen && settings.configured ? "open" : ""}`}><i />{settings.isOpen && settings.configured ? "주문 접수 중" : "주문 접수 중지"}</span><span className="account-role">{isOwner ? "주인 계정" : "운영자 계정"}</span><button type="button" onClick={() => setView("settings")}>접수·계좌 설정 <ChevronRight size={15} /></button><a href={`/s/${team.publicSlug}`} target="_blank" rel="noreferrer">고객 화면 <ChevronRight size={15} /></a></div>
+        {syncError && <div className="connection-warning" role="alert"><span>{syncError} 마지막으로 확인한 정보를 표시합니다.</span><button type="button" disabled={syncing || !online} onClick={() => void refreshSnapshot()}>다시 연결</button></div>}
         {view === "orders" ? <>
+          {(!settings.configured || !settings.isOpen || !menu.some((item) => item.status === "AVAILABLE" && item.stockQuantity > 0) || !tables.some((table) => table.isActive)) && <details className="readiness-check" open={!settings.configured}><summary>영업 준비 확인 <span>계좌 → 메뉴 → QR → 주문 접수</span></summary><div>{([{ label: "입금 계좌", ready: settings.configured, view: "settings" }, { label: "판매할 메뉴·재고", ready: menu.some((item) => item.status === "AVAILABLE" && item.stockQuantity > 0), view: "inventory" }, { label: "테이블 QR (매장 이용 시)", ready: tables.some((table) => table.isActive), view: "tables" }, { label: "주문 접수 켜기", ready: settings.isOpen && settings.configured, view: "settings" }] as Array<{ label: string; ready: boolean; view: View }>).map((item) => <button key={item.label} type="button" onClick={() => setView(item.view)}><span>{item.ready ? <Check size={17} /> : <AlertTriangle size={17} />}{item.label}</span><strong>{item.ready ? "준비됨" : "설정하기"}</strong></button>)}</div></details>}
           <section className="stats-grid">
             <article><span className="stat-icon payment"><WalletCards size={22} /></span><div><small>입금 확인 필요</small><strong>{pendingPayments}<em>건</em></strong></div><button type="button" onClick={() => setFilter("PAYMENT")}>바로 보기 <ChevronRight size={15} /></button></article>
-            <article><span className="stat-icon cooking"><CookingPot size={22} /></span><div><small>조리 대기·진행</small><strong>{cookingCount}<em>건</em></strong></div><span className="trend">평균 8분</span></article>
+            <article><span className="stat-icon cooking"><CookingPot size={22} /></span><div><small>조리 대기·진행</small><strong>{cookingCount}<em>건</em></strong></div><button type="button" onClick={() => setFilter("COOKING")}>바로 보기 <ChevronRight size={15} /></button></article>
             <article><span className="stat-icon ready"><Check size={22} /></span><div><small>조리 완료</small><strong>{readyCount}<em>건</em></strong></div><button type="button" onClick={() => setFilter("READY")}>바로 보기 <ChevronRight size={15} /></button></article>
             <article><span className="stat-icon sales"><BarChart3 size={22} /></span><div><small>확정 매출</small><strong className="money">{formatWon(sales.totalRevenue)}</strong></div><button type="button" onClick={() => setView("sales")}>자세히 <ChevronRight size={15} /></button></article>
           </section>
 
+          <p className="order-workflow">실제 입금 확인 <ChevronRight size={14} /> 조리 시작 <ChevronRight size={14} /> 조리 완료 <ChevronRight size={14} /> 제공·수령 완료</p>
           <div className="order-toolbar">
             <div className="admin-filters" role="tablist" aria-label="주문 필터">
-              {([ ["ALL", "전체"], ["DINE_IN", "테이블"], ["TAKEOUT", "포장"], ["PAYMENT", "입금 확인"], ["COOKING", "조리 중"], ["READY", "조리 완료"] ] as Array<[Filter, string]>).map(([value, label]) => <button type="button" role="tab" aria-selected={filter === value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{label}{value === "PAYMENT" && pendingPayments > 0 && <b>{pendingPayments}</b>}</button>)}
+              {([ ["ALL", "진행 중"], ["UNPAID", "입금 대기"], ["PAYMENT", "입금 확인"], ["COOKING", "조리"], ["READY", "전달 대기"], ["HISTORY", "완료·취소"] ] as Array<[Filter, string]>).map(([value, label]) => <button type="button" role="tab" aria-selected={filter === value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{label}<b>{filterOrders(orders, value, "ALL", "").length}</b></button>)}
             </div>
             <button className="refresh-button" type="button" disabled={syncing} onClick={() => void refreshSnapshot()}><RefreshCw size={16} /> 새로고침</button>
           </div>
 
+          <div className="order-list-controls"><div className="channel-filter" aria-label="주문 유형">{([ ["ALL", "전체 유형"], ["DINE_IN", "테이블"], ["TAKEOUT", "포장"] ] as Array<[OrderChannel, string]>).map(([value, label]) => <button type="button" key={value} aria-pressed={channel === value} onClick={() => setChannel(value)}>{label}</button>)}</div><span>{visibleOrders.length}건 표시</span>{isOwner && <button className="manual-entry-toggle" type="button" aria-expanded={manualOpen} onClick={() => setManualOpen((value) => !value)}><Plus size={16} /> 현장 판매 입력</button>}</div>
+          {filter === "HISTORY" && <p className="history-note">최근 완료·취소 내역입니다. 전체 기간의 매출은 ‘매출 현황’에서 확인하세요.</p>}
+          {isOwner && manualOpen && <OwnerManualOrderEntry tables={tables} onCreate={createManualOrder} />}
           <section className="orders-grid" aria-label="주문 목록">
-            {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>해당 주문을 모두 처리했어요</strong><span>새 주문이 들어오면 자동으로 표시됩니다.</span></div> : visibleOrders.map((order) => <OrderCard order={order} onAdvance={advance} onCancel={cancel} key={order.id} />)}
+            {visibleOrders.length === 0 ? <div className="empty-state"><Check size={28} /><strong>{search ? "검색 결과가 없습니다" : filter === "HISTORY" ? "완료·취소된 주문이 없습니다" : "해당하는 진행 주문이 없습니다"}</strong><span>{search ? "주문번호·테이블·이름을 확인하거나 검색 조건을 바꿔 주세요." : "새 주문이 들어오면 자동으로 표시됩니다."}</span>{(search || channel !== "ALL") && <button type="button" onClick={() => { setSearch(""); setChannel("ALL"); }}>검색 조건 지우기</button>}</div> : visibleOrders.map((order) => <OrderCard order={order} busy={busyOrders.has(order.id) || !online} onAdvance={(id) => void runOrderAction(id, advance)} onCancel={(id) => void runOrderAction(id, cancel)} key={order.id} />)}
           </section>
         </> : view === "inventory" ? <InventoryView menu={menu} categories={categories} onAdjust={adjustStock} onSaveMenu={saveMenu} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} /> : view === "tables" ? <TablesView team={team} tables={tables} onConfigure={configureTables} onRotate={rotateTableQr} /> : view === "sales" ? <SalesView totalSales={sales} dailySales={dailySales} tableDailySales={tableDailySales} tables={tables} /> : view === "battle" ? <TableBattleOperations state={battleState} loading={battleLoading} onRefresh={() => void refreshBattle()} onSelectWinner={(participantId) => void selectBattleWinner(participantId)} onOperate={(command, successMessage, demoUpdate) => void runBattleOperation(command, successMessage, demoUpdate)} /> : <SettingsView settings={settings} onSave={saveSettings} onLogout={logout} />}
       </section>
@@ -635,8 +680,47 @@ function PasswordSecurityCard() {
   </form>;
 }
 
-function OrderCard({ order, onAdvance, onCancel }: { order: DemoOrder; onAdvance: (id: string) => void; onCancel: (id: string) => void }) {
-  const isPayment = order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED";
+function OwnerManualOrderEntry({ tables, onCreate }: { tables: FestivalTable[]; onCreate: (draft: OwnerManualOrderDraft) => Promise<boolean> }) {
+  const [label, setLabel] = useState("");
+  const [amount, setAmount] = useState("");
+  const [fulfillmentType, setFulfillmentType] = useState<"DINE_IN" | "TAKEOUT">("TAKEOUT");
+  const [tableNumber, setTableNumber] = useState("");
+  const [saving, setSaving] = useState(false);
+  const request = useRef<{ fingerprint: string; id: string } | null>(null);
+  const submissionLock = useRef(false);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const activeTables = tables.filter((table) => table.isActive);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (submissionLock.current) return;
+    const parsedAmount = Number(amount);
+    const parsedTable = fulfillmentType === "DINE_IN" ? Number(tableNumber) : null;
+    if (!label.trim() || !Number.isInteger(parsedAmount) || parsedAmount < 100 || parsedAmount > 10000000 || (fulfillmentType === "DINE_IN" && !parsedTable)) { setResultMessage("내역, 100~10,000,000원 사이의 금액, 테이블을 확인해 주세요."); return; }
+    const fingerprint = JSON.stringify([label.trim(), parsedAmount, fulfillmentType, parsedTable]);
+    if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
+    submissionLock.current = true;
+    setSaving(true);
+    setResultMessage(null);
+    try {
+      const saved = await onCreate({ label: label.trim(), amount: parsedAmount, fulfillmentType, tableNumber: parsedTable, clientRequestId: request.current.id });
+      if (saved) { setLabel(""); setAmount(""); setTableNumber(""); request.current = null; setResultMessage("판매 내역을 저장했습니다. 아래 완료 내역을 확인하세요."); }
+      else setResultMessage("저장 여부를 확인하지 못했습니다. 같은 내용으로 다시 누르면 중복 저장되지 않습니다.");
+    } finally { setSaving(false); submissionLock.current = false; }
+  };
+  return <form className="owner-manual-order" onSubmit={submit}>
+    <div><span>주인 전용</span><strong>현장 판매 직접 입력</strong><small>이미 받은 금액을 매출·제공 완료로 기록합니다. 조리 주문을 만들거나 메뉴 재고를 차감하지 않습니다.</small></div>
+    <label>판매 내역<input disabled={saving} required maxLength={80} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="예: 현장 세트 판매" /></label>
+    <label>받은 금액 (원)<input disabled={saving} required maxLength={8} value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder="예: 15000" /></label>
+    <label>주문 유형<select disabled={saving} value={fulfillmentType} onChange={(event) => { setFulfillmentType(event.target.value as "DINE_IN" | "TAKEOUT"); setTableNumber(""); }}><option value="TAKEOUT">포장</option><option value="DINE_IN">테이블</option></select></label>
+    {fulfillmentType === "DINE_IN" && <select required value={tableNumber} onChange={(event) => setTableNumber(event.target.value)} aria-label="테이블 번호"><option value="">테이블 선택</option>{activeTables.map((table) => <option key={table.id} value={table.tableNumber}>테이블 {table.tableNumber}</option>)}</select>}
+    <button type="submit" disabled={saving || !label.trim() || !amount}>{saving ? "저장 중…" : `${amount ? formatWon(Number(amount)) : "판매"} 기록하기`}</button>
+    {resultMessage && <p className="manual-result" role="status">{resultMessage}</p>}
+  </form>;
+}
+
+function OrderCard({ order, busy, onAdvance, onCancel }: { order: DemoOrder; busy: boolean; onAdvance: (id: string) => void; onCancel: (id: string) => void }) {
+  const active = isActiveOrder(order);
+  const isPayment = active && order.paymentStatus === "CUSTOMER_MARKED_TRANSFERRED";
   const waitingForTransfer = order.orderStatus === "PENDING_PAYMENT" && !isPayment;
   const actionLabel = waitingForTransfer ? "입금 대기" : isPayment ? "입금 확인" : order.orderStatus === "PAID" ? "조리 시작" : order.orderStatus === "COOKING" ? "조리 완료" : order.fulfillmentType === "DINE_IN" ? "제공 완료" : "수령 완료";
   const actionIcon = isPayment ? <WalletCards size={17} /> : order.orderStatus === "READY" ? <Check size={17} /> : <ChefHat size={17} />;
@@ -646,7 +730,8 @@ function OrderCard({ order, onAdvance, onCancel }: { order: DemoOrder; onAdvance
     <div className={`order-destination ${order.fulfillmentType === "TAKEOUT" ? "takeout" : ""}`}>{order.fulfillmentType === "DINE_IN" ? <><UtensilsCrossed size={19} /><strong>테이블 {order.tableNumber}</strong><span>매장 이용</span></> : <><ShoppingBag size={19} /><div className="takeout-contact-copy"><strong>{order.customerName ?? "포장 주문"}</strong><span>{order.customerPhone ? formatCustomerPhone(order.customerPhone) : "주문번호로 호출"}</span></div>{order.customerPhone && <a className="takeout-call" href={`tel:${order.customerPhone}`} aria-label={`${order.customerName ?? order.orderNumber} 고객에게 전화`}><Phone size={13} /> 전화</a>}</>}</div>
     <div className="order-items">{order.items.map((item, index) => <div key={`${item.name}-${index}`}><span>{item.name}{item.selectedOptions && item.selectedOptions.length > 0 && <small>{item.selectedOptions.map((option) => `+ ${option.name}`).join(" · ")}</small>}</span><strong>× {item.quantity}</strong></div>)}</div>
     <div className="order-total"><span>총 결제금액</span><strong>{formatWon(order.totalAmount)}</strong></div>
-    <div className="order-actions"><button className="cancel-order" type="button" onClick={() => onCancel(order.id)} aria-label={`${order.orderNumber} 주문 취소`}><X size={17} /></button><button className="primary-order-action" type="button" disabled={waitingForTransfer} onClick={() => onAdvance(order.id)}>{actionIcon}{actionLabel}</button></div>
+    {isPayment && <p className="payment-check-hint">입금자명 {order.orderNumber} · 실제 입금액을 확인해 주세요.</p>}
+    <div className="order-actions">{active ? <><button className="cancel-order" type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`${order.orderNumber} 주문 취소`}>취소</button><button className="primary-order-action" type="button" disabled={busy || waitingForTransfer} onClick={() => onAdvance(order.id)}>{actionIcon}{busy ? "처리 중…" : actionLabel}</button></> : <span className="order-final-label">{order.orderStatus === "CANCELLED" ? "취소된 주문" : "제공·수령 완료"}</span>}</div>
   </article>;
 }
 
@@ -698,13 +783,15 @@ function InventoryView({ menu, categories, onAdjust, onSaveMenu, onAddCategory, 
 function MenuEditor({ item, categories, onClose, onSave }: { item: MenuItem | null; categories: string[]; onClose: () => void; onSave: (draft: MenuDraft) => Promise<void> }) {
   const [draft, setDraft] = useState<MenuDraft>(item ? { name: item.name, description: item.description, price: item.price, category: item.category, status: item.status, stockQuantity: item.stockQuantity, options: item.options } : { name: "", description: "", price: 0, category: categories[0] ?? "", status: "AVAILABLE", stockQuantity: 0, options: [] });
   const [saving, setSaving] = useState(false);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  useDialog(dialogRef, true, () => { if (!saving) onClose(); });
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     await onSave(draft);
     setSaving(false);
   };
-  return <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><form className="admin-modal" role="dialog" aria-modal="true" aria-label={item ? "메뉴 수정" : "새 메뉴 추가"} onSubmit={submit}>
+  return <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => { if (!saving && event.target === event.currentTarget) onClose(); }}><form ref={dialogRef} tabIndex={-1} className="admin-modal" role="dialog" aria-modal="true" aria-label={item ? "메뉴 수정" : "새 메뉴 추가"} onSubmit={submit}>
     <div className="admin-modal-head"><div><small>{item ? "MENU EDIT" : "NEW MENU"}</small><h2>{item ? item.name : "새 메뉴 추가"}</h2></div><button type="button" onClick={onClose} aria-label="닫기"><X size={18} /></button></div>
     <label>메뉴 이름<input required maxLength={80} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
     <label>설명<textarea maxLength={500} rows={3} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>

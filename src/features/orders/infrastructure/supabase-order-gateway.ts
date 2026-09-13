@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { CreateOrderCommand, CreatedOrder, CreateOrderSecurity, OrderGateway } from "@/src/features/orders/application/order-service";
+import type { CreateOrderCommand, CreatedOrder, CreateOrderSecurity, OrderGateway, OwnerManualOrderCommand } from "@/src/features/orders/application/order-service";
 import type { AdminOrderAction, PublicOrder } from "@/src/features/orders/domain/order";
-import { conflict, forbidden, notFound, rateLimited } from "@/src/shared/errors/app-error";
+import { conflict, forbidden, rateLimited, serviceUnavailable } from "@/src/shared/errors/app-error";
 
 const createdOrderSchema = z.object({
   order_id: z.string().uuid(),
@@ -15,6 +15,8 @@ const createdOrderSchema = z.object({
 });
 
 const publicOrderSchema = z.object({
+  payment_details: z.object({ bank_name: z.string(), account_number: z.string(), account_holder: z.string() }).nullable().optional(),
+  menu_path: z.string().regex(/^\/(?:t\/[a-zA-Z0-9_-]+|s\/team-[a-f0-9]{16})$/).optional(),
   order_number: z.string(),
   fulfillment_type: z.enum(["DINE_IN", "TAKEOUT"]),
   table_number: z.number().int().positive().nullable(),
@@ -75,10 +77,11 @@ export class SupabaseOrderGateway implements OrderGateway {
       p_signature: security.signature,
     });
     if (error?.message.toLowerCase().includes("rate limit")) throw rateLimited("주문 상태 확인이 너무 잦습니다. 잠시 후 다시 시도해 주세요.");
-    if (error) throw notFound("주문을 찾을 수 없습니다.");
+    if (error) throw serviceUnavailable("주문 현황에 연결하지 못했습니다. 잠시 후 다시 확인해 주세요.");
     if (!data) return null;
     const parsed = publicOrderSchema.safeParse(data);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) throw serviceUnavailable("주문 현황을 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.");
+    return parsed.data;
   }
 
   async process(orderId: string, action: AdminOrderAction): Promise<void> {
@@ -87,6 +90,17 @@ export class SupabaseOrderGateway implements OrderGateway {
     if (error.message.toLowerCase().includes("admin")) throw forbidden();
     throw conflict("현재 주문 상태에서는 해당 작업을 수행할 수 없습니다.");
   }
+
+  async createManualOrder(command: OwnerManualOrderCommand): Promise<void> {
+    const { error } = await this.client.rpc("owner_create_manual_order", {
+      p_client_request_id: command.clientRequestId,
+      p_label: command.label, p_amount: command.amount, p_fulfillment_type: command.fulfillmentType, p_table_number: command.tableNumber,
+    });
+    if (!error) return;
+    if (error.message.toLowerCase().includes("owner")) throw forbidden("오너 계정만 직접 입력할 수 있습니다.");
+    throw conflict("직접 입력 주문을 저장하지 못했습니다. 금액과 테이블을 확인해 주세요.");
+  }
+
 }
 
 function mapCreateError(message: string) {

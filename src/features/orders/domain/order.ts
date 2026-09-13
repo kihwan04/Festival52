@@ -4,6 +4,8 @@ export type PaymentStatus = "UNPAID" | "CUSTOMER_MARKED_TRANSFERRED" | "CONFIRME
 export type AdminOrderAction = "CONFIRM_PAYMENT" | "START_COOKING" | "MARK_READY" | "MARK_SERVED" | "CANCEL";
 
 export interface PublicOrder {
+  payment_details?: { bank_name: string; account_number: string; account_holder: string } | null;
+  menu_path?: string;
   order_number: string;
   fulfillment_type: FulfillmentType;
   table_number: number | null;

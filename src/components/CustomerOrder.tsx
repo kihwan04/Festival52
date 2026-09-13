@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChefHat, ChevronRight, Copy, PackageCheck, Minus, Plus, ShoppingBag, Store, Swords, UtensilsCrossed, WalletCards, X } from "lucide-react";
 import { DEMO_MENU } from "@/src/shared/demo-data";
 import { formatWon, isOrderable, type MenuItem } from "@/src/features/menu/domain/menu";
@@ -8,6 +8,7 @@ import { publicOrderProgressStep, publicOrderStatusMessage, type FulfillmentType
 import { usePublicOrderStatus } from "@/src/features/orders/presentation/use-public-order-status";
 import { PushNotificationOptIn } from "@/src/components/PushNotificationOptIn";
 import { DEMO_STORE_SETTINGS, type StoreSettings } from "@/src/features/settings/domain/store-settings";
+import { useDialog } from "@/src/shared/use-dialog";
 
 interface CustomerOrderProps {
   initialFulfillment: FulfillmentType;
@@ -41,6 +42,21 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const clientRequestId = useRef<string | null>(null);
+  const submissionLock = useRef(false);
+  const cartDialog = useRef<HTMLElement>(null);
+  const optionDialog = useRef<HTMLElement>(null);
+  const [recentOrder, setRecentOrder] = useState<{ token: string; number: string } | null>(null);
+  useDialog(cartDialog, cartOpen, () => { if (!submitting) setCartOpen(false); });
+  useDialog(optionDialog, Boolean(optionPicker), () => setOptionPicker(null));
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(`festival-recent-${teamSlug}`) ?? "null") as { token: string; number: string; expires: number } | null;
+      if (saved && saved.expires > Date.now() && /^[0-9a-f-]{36}$/i.test(saved.token)) setRecentOrder(saved);
+    } catch { /* Ordering works even when browser storage is disabled. */ }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [teamSlug]);
   const { order: syncedOrder, connected, lastUpdatedAt, refresh: refreshOrder } = usePublicOrderStatus(createdOrder?.publicToken ?? null);
 
   const categories = ["전체", ...Array.from(new Set(menuItems.map((item) => item.category)))];
@@ -94,6 +110,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
   };
 
   const placeOrder = async () => {
+    if (submissionLock.current || cartItems.length === 0) return;
     setSubmissionError(null);
     if (!acceptingOrders) {
       setSubmissionError("현재는 주문 접수 시간이 아닙니다.");
@@ -104,6 +121,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       setSubmissionError("포장 주문을 받을 분의 이름과 휴대폰 번호를 확인해 주세요.");
       return;
     }
+    submissionLock.current = true;
     setSubmitting(true);
     try {
       if (demoMode) {
@@ -129,9 +147,15 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       setCreatedOrder({ orderNumber, publicToken: String(result.public_token), initialOrder: buildInitialOrder(orderNumber, fulfillment, tableNumber ?? null, confirmedTotal, cartItems) });
       setCartOpen(false);
       setOrderComplete(true);
+      const publicToken = String(result.public_token);
+      if (/^[0-9a-f-]{36}$/i.test(publicToken)) {
+        try { sessionStorage.setItem(`festival-recent-${teamSlug}`, JSON.stringify({ token: publicToken, number: orderNumber, expires: new Date().getTime() + 86400000 })); } catch { /* Optional shortcut. */ }
+        window.location.assign(`/order/${publicToken}`);
+      }
     } catch (error) {
       setSubmissionError(!navigator.onLine ? "네트워크 연결이 끊겼습니다. 연결 후 같은 주문을 다시 눌러도 중복 접수되지 않습니다." : error instanceof Error ? error.message : "주문을 접수하지 못했습니다.");
     } finally {
+      submissionLock.current = false;
       setSubmitting(false);
     }
   };
@@ -207,6 +231,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
 
   return (
     <main className="customer-shell">
+      {recentOrder && <a className="public-order-link" href={`/order/${recentOrder.token}`}>내 주문 #{recentOrder.number} 이어 보기</a>}
       <header className="customer-header">
         <div className="customer-head-row">
           <div className="brand compact" aria-label={`${storeSettings.stallName} 주문 화면`}><span className="brand-mark">52</span><span><strong>{storeSettings.stallName}</strong><small>FESTIVAL ORDER</small></span></div>
@@ -246,7 +271,7 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
       <div className="customer-note"><Store size={18} /><span>주문 즉시 재고가 확보돼요.<small>10분 안에 입금 표시가 없으면 주문이 자동 취소되고 재고가 복구됩니다.</small></span></div>
       {totalQuantity > 0 && <button type="button" className="floating-cart" onClick={() => setCartOpen(true)}><span className="cart-count">{totalQuantity}</span><strong>주문 바구니 보기</strong><span>{formatWon(totalAmount)} <ChevronRight size={18} /></span></button>}
 
-      {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">
+      {cartOpen && <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section ref={cartDialog} tabIndex={-1} className="cart-sheet" role="dialog" aria-modal="true" aria-label="주문 바구니">
         <div className="sheet-handle" /><div className="sheet-title"><div><small>{fulfillment === "DINE_IN" ? `${tableNumber}번 테이블` : "포장"}</small><h2>주문을 확인해 주세요</h2></div><button className="round-button" type="button" onClick={() => setCartOpen(false)} aria-label="닫기"><X size={19} /></button></div>
         <div className="cart-items">{cartItems.map((item) => <div className="cart-item" key={item.key}><span className="cart-emoji">{item.emoji}</span><div><strong>{item.name}</strong>{item.selectedOptions.length > 0 && <em>{item.selectedOptions.map((option) => `${option.name} +${formatWon(option.priceDelta)}`).join(" · ")}</em>}<small>{formatWon(item.unitPrice)}</small></div><div className="quantity-control"><button type="button" onClick={() => updateQuantity(item.key, -1)} aria-label={`${item.name} 수량 줄이기`}><Minus size={15} /></button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.key, 1)} disabled={menuCartQuantity(item.id) >= Math.min(10, item.stockQuantity) || totalQuantity >= 20 || !acceptingOrders} aria-label={`${item.name} 수량 늘리기`}><Plus size={15} /></button></div></div>)}</div>
         {fulfillment === "TAKEOUT" && <div className="takeout-contact-form">
@@ -256,10 +281,10 @@ export function CustomerOrder({ initialFulfillment, teamSlug, tableNumber, qrTok
           <p>연락처는 운영자에게만 보이며 수령 완료·취소 시 자동 삭제됩니다.</p>
         </div>}
         <div className="cart-summary"><span>총 {totalQuantity}개</span><strong>{formatWon(totalAmount)}</strong></div>
-        {submissionError && <p className="submission-error">{submissionError}</p>}
-        <button className="checkout-button" type="button" disabled={submitting || !acceptingOrders} onClick={placeOrder}>{submitting ? "재고 확인 중…" : acceptingOrders ? "계좌이체로 주문하기" : "현재 주문 준비 중"} {!submitting && acceptingOrders && <ChevronRight size={19} />}</button><p className="checkout-caption">주문 후 입금 계좌와 주문번호를 안내해 드려요.</p>
+        {submissionError && <p className="submission-error" role="alert">{submissionError}</p>}
+        <button className="checkout-button" type="button" disabled={submitting || !acceptingOrders || totalQuantity === 0} onClick={placeOrder}>{submitting ? "재고 확인 중…" : acceptingOrders ? "계좌이체로 주문하기" : "현재 주문 준비 중"} {!submitting && acceptingOrders && <ChevronRight size={19} />}</button><p className="checkout-caption">주문 후 입금 계좌와 주문번호를 안내해 드려요.</p>
       </section></div>}
-      {optionPicker && <div className="sheet-backdrop option-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOptionPicker(null); }}><section className="cart-sheet option-picker" role="dialog" aria-modal="true" aria-label={`${optionPicker.name} 옵션 선택`}>
+      {optionPicker && <div className="sheet-backdrop option-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOptionPicker(null); }}><section ref={optionDialog} tabIndex={-1} className="cart-sheet option-picker" role="dialog" aria-modal="true" aria-label={`${optionPicker.name} 옵션 선택`}>
         <div className="sheet-handle" /><div className="sheet-title"><div><small>추가 옵션</small><h2>{optionPicker.name}</h2></div><button className="round-button" type="button" onClick={() => setOptionPicker(null)} aria-label="닫기"><X size={19} /></button></div>
         <p className="option-picker-guide">원하는 옵션을 모두 선택해 주세요. 선택하지 않고 담아도 됩니다.</p>
         <div className="customer-option-list">{optionPicker.options.map((option) => <label key={option.id} className={pendingOptionIds.includes(option.id) ? "selected" : ""}><input type="checkbox" checked={pendingOptionIds.includes(option.id)} onChange={(event) => setPendingOptionIds((current) => event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id))} /><span><strong>{option.name}</strong><small>+ {formatWon(option.priceDelta)}</small></span><i><Check size={15} /></i></label>)}</div>

@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { getPublicSupabase } from "@/src/lib/supabase/server";
-import { createOrder, getPublicOrder, markTransferClaimed, processAdminOrder } from "@/src/features/orders/application/order-service";
+import { createOrder, createOwnerManualOrder, getPublicOrder, markTransferClaimed, processAdminOrder } from "@/src/features/orders/application/order-service";
 import { SupabaseOrderGateway } from "@/src/features/orders/infrastructure/supabase-order-gateway";
-import { adminOrderActionSchema, createOrderSchema, transferClaimSchema } from "@/src/features/orders/presentation/schemas";
+import { adminOrderActionSchema, createOrderSchema, ownerManualOrderSchema, transferClaimSchema } from "@/src/features/orders/presentation/schemas";
 import { notFound, serviceUnavailable } from "@/src/shared/errors/app-error";
-import { requireAdminSession } from "@/src/shared/auth/admin-session";
+import { requireAdminSession, requireOwnerSession } from "@/src/shared/auth/admin-session";
 import { handleController, parseJson } from "@/src/shared/http/route-handler";
 import { signOrderRequest, signPublicOrderRequest, signTransferClaim } from "@/src/shared/security/request-signing";
 import { notifyReadyPushBestEffort } from "@/src/features/push/presentation/push-controller";
@@ -58,5 +58,16 @@ export function processAdminOrderController(request: Request, context: { params:
       ? await notifyReadyPushBestEffort(session.client, orderId.data)
       : undefined;
     return { body: { ok: true, ...(push ? { push } : {}) } };
+  });
+}
+
+export function createOwnerManualOrderController(request: Request) {
+  return handleController(async () => {
+    const [command, session] = await Promise.all([
+      parseJson(request, ownerManualOrderSchema, "직접 입력 내용을 다시 확인해 주세요."),
+      requireOwnerSession(),
+    ]);
+    await createOwnerManualOrder(new SupabaseOrderGateway(session.client), command);
+    return { body: { ok: true }, status: 201 };
   });
 }

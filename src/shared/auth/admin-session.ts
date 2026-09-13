@@ -54,6 +54,13 @@ export async function requireAdminSession(): Promise<AdminSession> {
   return { client, userId, accessToken };
 }
 
+export async function requireOwnerSession(): Promise<AdminSession> {
+  const session = await requireAdminSession();
+  const { data: isOwner, error } = await session.client.rpc("is_festival_owner");
+  if (error || isOwner !== true) throw forbidden("오너 계정만 주문 내역을 직접 입력하거나 삭제할 수 있습니다.");
+  return session;
+}
+
 function accessTokenSubject(accessToken: string): string | null {
   try {
     const payload = decodeAccessToken(accessToken) as { sub?: unknown };
